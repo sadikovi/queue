@@ -1,0 +1,28 @@
+.jumbotron {
+    margin-top: -3rem;
+    margin-bottom: 4rem;
+    padding-top: 3rem;
+    padding-bottom: 4rem;
+    font-size: 1.25rem;
+    text-align: center;
+
+    .btn {
+        padding: .5em 1em;
+        font-size: inherit;
+        font-weight: normal;
+        line-height: 1
+    }
+
+    h1 {
+        font-size: 2.5em;
+        font-weight: normal;
+    }
+}
+
+@media (min-width: 34em) {
+    .jumbotron {
+        padding-top:6rem;
+        padding-bottom: 8rem;
+        font-size: 1.5rem;
+    }
+}

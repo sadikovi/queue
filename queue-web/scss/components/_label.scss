@@ -1,0 +1,31 @@
+// A rounded corner box containing a label "open" or "closed"
+// Without a label it is grey.
+.lbl {
+    display: inline-block;
+    padding: 4px 8px;
+    margin: 4px 0;
+    font-weight: bold;
+    line-height: 20px;
+    color: #fff;
+    text-align: center;
+    border-radius: 3px;
+    background-color: #999;
+}
+
+.lbl-compact {
+    padding: 6px 12px;
+}
+
+.lbl-blue { background-color: $brand-blue; }
+
+.lbl-green { background-color: $brand-green; }
+
+.lbl-red { background-color: $brand-red; }
+
+.lbl-orange { background-color: $brand-orange; }
+
+.lbl-purple { background-color: $brand-purple; }
+
+.lbl-yellow { background-color: $brand-yellow; }
+
+.lbl-teal { background-color: $brand-teal; }

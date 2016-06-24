@@ -1,0 +1,18 @@
+// divider
+.divider {
+    margin: 10px 0;
+
+    line-height: 1;
+    height: 0;
+
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #d8d8d8;
+
+    user-select: none;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}

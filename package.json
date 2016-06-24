@@ -1,0 +1,35 @@
+{
+  "version": "0.0.1",
+  "name": "queue",
+  "description": "Improved job scheduler for Apache Spark",
+  "author": "Ivan Sadikov",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sadikovi/queue.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sadikovi/queue/issues"
+  },
+  "scripts": {
+    "setup": "if [[ ! -d \"node_modules\" ]]; then npm install; fi",
+    "build": "node-sass queue-web/scss/index.scss --include-path node_modules --output-style compressed --output queue-web/build",
+    "lint": "coffeelint -f coffeelint.json queue-web/coffee",
+    "compile": "browserify -t [coffeeify --no-header --compile] --extension='.coffee' queue-web/coffee/*.coffee | uglifyjs - -o queue-web/build/index.min.js -c -m",
+    "test": "jasmine-node --coffee queue-web/spec",
+    "publish": "npm run setup && npm run build && npm run lint && npm run test && npm run compile"
+  },
+  "devDependencies": {
+    "coffee-script": "^1.10.0",
+    "node-sass": "^3.7.0",
+    "uglifyjs": "^2.3.0",
+    "coffeelint": "1.15.0",
+    "jasmine-node": "^1.14.5",
+    "browserify": "^13.0.1",
+    "coffeeify": "^2.0.1"
+  },
+  "keywords": [
+    "queue",
+    "spark"
+  ]
+}

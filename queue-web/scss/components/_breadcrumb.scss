@@ -1,0 +1,35 @@
+// breadcrumb
+.breadcrumb {
+    margin: 16px 0;
+    display: inline-block;
+    vertical-align: middle;
+
+    &:first-child { margin-top: 0; }
+
+    &:last-child { margin-bottom: 0; }
+
+    .separator {
+        display: inline-block;
+        opacity: 0.8;
+        margin: 0 2px 0;
+
+        font-size: 90%;
+        color: #ccc;
+        vertical-align: baseline;
+    }
+
+    a,
+    a:hover {
+        text-decoration: none;
+    }
+
+    a.section { cursor: pointer; }
+
+    .section {
+        display: inline-block;
+        margin: 0;
+        padding: 4px;
+
+        &.active { font-weight: bold; }
+    }
+}

@@ -1,2 +1,2 @@
 # queue
-Improved octohaven+
+Improved job scheduler for [Apache Spark](https://spark.apache.org)
