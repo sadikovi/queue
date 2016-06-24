@@ -99,3 +99,7 @@ work/*
 
 # ignore npm artifacts
 node_modules/
+
+# ignore generated manifest
+MANIFEST
+!MANIFEST.in
