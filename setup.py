@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 
 import sys
-from init import LIB_PATH
-from distutils.core import setup
 from setuptools import setup
+from init import LIB_PATH
 
 # Currently Python 2.7 is supported
 PYTHON_VERSION_MAJOR = 2
