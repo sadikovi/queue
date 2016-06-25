@@ -7,15 +7,16 @@ from init import STATIC_PATH, WEB_PATH
 
 # Loading jinja templates
 env = Environment(loader=FileSystemLoader(os.path.join(WEB_PATH, "view")))
+TEMPLATE_HOME = "home.html"
 
 """
 Queue server main entry point. It defines all URLs that are used either for static content or
 REST API. Note that entire configuration for server is set in here.
 """
-class QueueServer(object):
+class QueueController(object):
     @cherrypy.expose
     def index(self):
-        template = env.get_template("home.html")
+        template = env.get_template(TEMPLATE_HOME)
         return template.render()
 
 # Configuration setup for application except host and port
@@ -39,4 +40,4 @@ def getConf(): # pragma: no cover
 def start(host="127.0.0.1", port=8080): # pragma: no cover
     cherrypy.config.update({"server.socket_host": host})
     cherrypy.config.update({"server.socket_port": port})
-    cherrypy.quickstart(QueueServer(), "/", getConf())
+    cherrypy.quickstart(QueueController(), "/", getConf())
