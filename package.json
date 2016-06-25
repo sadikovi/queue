@@ -12,7 +12,7 @@
     "url": "https://github.com/sadikovi/queue/issues"
   },
   "scripts": {
-    "setup": "if [[ ! -d \"node_modules\" ]]; then npm install; fi",
+    "setup": "if [ ! -d \"node_modules\" ]; then npm install; fi",
     "build": "node-sass web/scss/index.scss --include-path node_modules --output-style compressed --output web/build",
     "lint": "coffeelint -f coffeelint.json web/coffee",
     "compile": "browserify -t [coffeeify --no-header --compile] --extension='.coffee' web/coffee/*.coffee | uglifyjs - -o web/build/index.min.js -c -m",
