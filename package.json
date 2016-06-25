@@ -13,9 +13,9 @@
   },
   "scripts": {
     "setup": "if [ ! -d \"node_modules\" ]; then npm install; fi",
-    "build": "node-sass web/scss/index.scss --include-path node_modules --output-style compressed --output web/build",
+    "build": "node-sass web/scss/index.scss --include-path node_modules --output-style compressed --output web/static",
     "lint": "coffeelint -f coffeelint.json web/coffee",
-    "compile": "browserify -t [coffeeify --no-header --compile] --extension='.coffee' web/coffee/*.coffee | uglifyjs - -o web/build/index.min.js -c -m",
+    "compile": "browserify -t [coffeeify --no-header --compile] --extension='.coffee' web/coffee/*.coffee | uglifyjs - -o web/static/index.min.js -c -m",
     "test": "jasmine-node --coffee web/spec",
     "publish": "npm run setup && npm run build && npm run lint && npm run test && npm run compile"
   },

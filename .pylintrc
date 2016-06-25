@@ -45,7 +45,7 @@ persistent=yes
 # R0921,R0922 Is raised when abstract classes are used in different module
 # R0401(cyclic-import) we have too many of them
 # W0122(exec-used) exec is used in openshift
-disable=C0111,I0011,W0142,R0201,E1103,W0122,E0401,E0611
+disable=C0111,I0011,W0142,R0201,E1103,W0122,E0401,E0611,W0201
 
 
 [REPORTS]
@@ -163,7 +163,7 @@ ignore-imports=no
 bad-functions=map,filter,apply,input,file
 
 # Good variable names which should always be accepted, separated by a comma
-good-names=_,i,j,k,e,qs,pk,setUp,tearDown,id
+good-names=_,i,j,k,e,qs,pk,setUp,tearDown,id,fd
 
 # Bad variable names which should always be refused, separated by a comma
 bad-names=foo,bar,baz,toto,tutu,tata

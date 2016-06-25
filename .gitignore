@@ -97,8 +97,9 @@ lib/*
 work/*
 !work/.placeholder
 
-# ignore npm artifacts
+# ignore npm and build artifacts
 node_modules/
+web/static/
 
 # ignore generated manifest
 MANIFEST

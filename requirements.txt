@@ -1,5 +1,7 @@
 # CherryPy
 cherrypy == 6.0.2
+jinja2 == 2.8
+
 # Testing
 coverage == 4.1
 mock == 2.0.0
