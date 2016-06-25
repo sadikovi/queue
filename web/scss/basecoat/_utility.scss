@@ -6,21 +6,21 @@
 // Layout
 // Centers content horizontally. Can be used inside or outside the grid.
 .centered {
-    display: block;
-    float: none;
-    margin-left: auto;
-    margin-right: auto;
+  display: block;
+  float: none;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 // Muted link
 a.link-muted {
-    color: #777;
+  color: #777;
 
-    &:hover,
-    &:active {
-        color: $brand-blue;
-        text-decoration: none;
-    }
+  &:hover,
+  &:active {
+    color: $brand-blue;
+    text-decoration: none;
+  }
 }
 
 // Text alignment
@@ -62,55 +62,55 @@ a.link-muted {
 .text-blur { color: #ccc; }
 
 .text-emphasized {
-    font-weight: bold;
-    color: #333;
+  font-weight: bold;
+  color: #333;
 }
 
 .text-mono { font-family: $mono-font; }
 
 .focused-outline {
-    border-color: #51a7e8 !important;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.075), 0 0 5px rgba(81, 167, 232, 0.5) !important;
+  border-color: #51a7e8 !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.075), 0 0 5px rgba(81, 167, 232, 0.5) !important;
 }
 
 // Misc
 .hidden {
-    display: none;
+  display: none;
 }
 
 .warning-box {
-    padding: 0.5em;
-    margin-bottom: 0.8em;
-    font-weight: bold;
-    background-color: #fffccc;
+  padding: 0.5em;
+  margin-bottom: 0.8em;
+  font-weight: bold;
+  background-color: #fffccc;
 }
 
 .success-box {
-    padding: 1em;
-    font-weight: bold;
-    background-color: #e2eef9;
-    border: 1px solid #bac6d3;
+  padding: 1em;
+  font-weight: bold;
+  background-color: #e2eef9;
+  border: 1px solid #bac6d3;
 }
 
 .error-box {
-    padding: 1em;
-    font-weight: bold;
-    background-color: #ffebe8;
-    border: 1px solid #dd3c10;
+  padding: 1em;
+  font-weight: bold;
+  background-color: #ffebe8;
+  border: 1px solid #dd3c10;
 }
 
 .margin-bottom {
-    &.small { margin-bottom: 10px; }
+  &.small { margin-bottom: 10px; }
 
-    &.medium { margin-bottom: 20px; }
+  &.medium { margin-bottom: 20px; }
 
-    &.large { margin-bottom: 50px; }
+  &.large { margin-bottom: 50px; }
 }
 
 .margin-right {
-    &.small { margin-right: 10px; }
+  &.small { margin-right: 10px; }
 
-    &.medium { margin-right: 20px; }
+  &.medium { margin-right: 20px; }
 
-    &.large { margin-right: 50px; }
+  &.large { margin-right: 50px; }
 }

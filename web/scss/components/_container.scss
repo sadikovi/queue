@@ -2,33 +2,33 @@ $container-vertical-padding: 10px;
 $container-horizontal-padding: 0px;
 
 .container {
-    width: auto;
-    max-width: $container-width;
-    padding-left: $container-horizontal-padding;
-    padding-right: $container-horizontal-padding;
-    margin-right: auto;
-    margin-left: auto;
-    @include clearfix;
+  width: auto;
+  max-width: $container-width;
+  padding-left: $container-horizontal-padding;
+  padding-right: $container-horizontal-padding;
+  margin-right: auto;
+  margin-left: auto;
+  @include clearfix;
 
-    &.fixed { width: $container-width; }
+  &.fixed { width: $container-width; }
 
-    &.page {
-        padding: $container-vertical-padding $container-horizontal-padding;
-    }
+  &.page {
+    padding: $container-vertical-padding $container-horizontal-padding;
+  }
 }
 
 
 /** container for code, logs and etc */
 pre.code-container {
-    min-height: 34px;
-    max-height: 340px;
-    padding: 7px 8px;
-    font-size: 10px;
-    color: #333;
-    vertical-align: middle;
-    background-color: #faf9fa;
-    border: 1px solid #ccc;
-    border-radius: 3px;
-    outline: none;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.075);
+  min-height: 34px;
+  max-height: 340px;
+  padding: 7px 8px;
+  font-size: 10px;
+  color: #333;
+  vertical-align: middle;
+  background-color: #faf9fa;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  outline: none;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.075);
 }

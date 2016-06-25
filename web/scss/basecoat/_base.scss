@@ -1,44 +1,44 @@
 * {
-    box-sizing: border-box;
+  box-sizing: border-box;
 }
 
 input,
 select,
 textarea,
 button {
-    font: #{$body-font-size}/1.4 $body-font;
+  font: #{$body-font-size}/1.4 $body-font;
 }
 
 html,
 body {
-    height: 100%;
+  height: 100%;
 }
 
 body {
-    font: #{$body-font-size}/1.4 $body-font;
-    color: $brand-gray-dark;
-    background-color: #fff;
+  font: #{$body-font-size}/1.4 $body-font;
+  color: $brand-gray-dark;
+  background-color: #fff;
 }
 
 a {
-    color: $brand-blue;
-    text-decoration: none;
+  color: $brand-blue;
+  text-decoration: none;
 
-    &:hover,
-    &:active {
-        text-decoration: underline;
-    }
+  &:hover,
+  &:active {
+    text-decoration: underline;
+  }
 }
 
 // Horizontal lines
 hr,
 .rule {
-    height: 0;
-    margin: 15px 0;
-    overflow: hidden;
-    background: transparent;
-    border: 0;
-    border-bottom: 1px solid #ddd;
+  height: 0;
+  margin: 15px 0;
+  overflow: hidden;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #ddd;
 }
 
 article,
@@ -54,5 +54,5 @@ menu,
 nav,
 section,
 summary {
-    display: block;
+  display: block;
 }

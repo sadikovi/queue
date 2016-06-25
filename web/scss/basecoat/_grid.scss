@@ -2,75 +2,74 @@
 //
 // Create rows with `.columns` to clear the floated columns and outdent the
 // padding on `.column`s with negative margin for alignment.
-
 .columns {
-    margin-right: -$grid-gutter;
-    margin-left: -$grid-gutter;
-    @include clearfix;
+  margin-right: -$grid-gutter;
+  margin-left: -$grid-gutter;
+  @include clearfix;
 }
 
 @media (max-width: 34em) {
-    .columns > .column {
-        float:none;
-        width: 100%
-    }
+  .columns > .column {
+    float:none;
+    width: 100%
+  }
 }
 
 // Base class for every column (requires a column width from below)
 .column {
-    float: left;
-    padding-right: $grid-gutter;
-    padding-left: $grid-gutter;
+  float: left;
+  padding-right: $grid-gutter;
+  padding-left: $grid-gutter;
 }
 
 // Column widths
 .one-third {
-    width: 33.333333%;
+  width: 33.333333%;
 }
 
 .two-thirds {
-    width: 66.666667%;
+  width: 66.666667%;
 }
 
 .one-eighth {
-    width: 12.5%;
+  width: 12.5%;
 }
 
 .one-fourth {
-    width: 25%;
+  width: 25%;
 }
 
 .one-sixth {
-    width: 16.666666%;
+  width: 16.666666%;
 }
 
 .one-half {
-    width: 50%;
+  width: 50%;
 }
 
 .three-fourths {
-    width: 75%;
+  width: 75%;
 }
 
 .one-fifth {
-    width: 20%;
+  width: 20%;
 }
 
 .two-fifths {
-    width: 40%;
+  width: 40%;
 }
 
 .three-fifths {
-    width: 60%;
+  width: 60%;
 }
 
 .four-fifths {
-    width: 80%;
+  width: 80%;
 }
 
 .single-column {
-    padding-right: $grid-gutter;
-    padding-left: $grid-gutter;
+  padding-right: $grid-gutter;
+  padding-left: $grid-gutter;
 }
 
 // Equal width columns via table sorcery.
