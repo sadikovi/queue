@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
 import sys
-from setuptools import Command
 from init import LIB_PATH
 from distutils.core import setup
+from setuptools import setup
 
 # Currently Python 2.7 is supported
 PYTHON_VERSION_MAJOR = 2
@@ -20,36 +20,6 @@ if not (sys.platform.startswith("darwin") or sys.platform.startswith("linux")):
 # Add dependencies to the path
 sys.path.insert(1, LIB_PATH)
 
-class Pylint(Command):
-    description = "BUILD run pylint"
-    user_options = []
-
-    def initialize_options(self):
-        pass
-
-    def finalize_options(self):
-        pass
-
-    def run(self):
-        sys.argv[1] = "setup.py"
-        import pylint
-        pylint.run_pylint()
-
-class Coverage(Command):
-    description = "BUILD run coverage"
-    user_options = []
-
-    def initialize_options(self):
-        pass
-
-    def finalize_options(self):
-        pass
-
-    def run(self):
-        from coverage.cmdline import main
-        # main(['run', '--source=src', '-m', 'test.test_sample'])
-        main(['report'])
-
 setup(
     name="queue",
     version="0.0.1",
@@ -60,8 +30,5 @@ setup(
     url="https://github.com/sadikovi/queue",
     platforms=["OS X", "Linux"],
     license="Apache License 2.0",
-    cmdclass={
-        "pylint": Pylint,
-        "coverage": Coverage
-    }
+    test_suite="test"
 )

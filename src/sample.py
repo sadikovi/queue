@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 
-import os, unittest
-
-class A(object):
+class Aclass(object):
     def __init__(self, name):
         self.name = name
 
