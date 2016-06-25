@@ -1,3 +1,5 @@
 #!/bin/bash
 
-/Users/sadikovi/developer/queue/venv/bin/python $@
+bin="`dirname "$0"`"
+ROOT_DIR="`cd "$bin/../"; pwd`"
+$ROOT_DIR/venv/bin/python $@

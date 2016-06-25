@@ -9,17 +9,16 @@ before_install:
   - sudo apt-get install -y nodejs npm
 
 install:
+  - pip install coveralls
   # install python dependencies
   - pip install -r requirements.txt --upgrade --target lib/
-  # setup node dependencies
-  - npm run setup
+  # install node dependencies
+  - npm install
 
 script:
-  # python, we run lint with coverage
-  - python run_pylint.py src test *.py
-  - python run_coverage.py run --source=src setup.py test
-  # display report in logs
-  - python run_coverage.py report
+  # python, we run lint with coverage and display coverage output
+  - bin/pylint --python=python
+  - bin/coverage --python=python
   # npm (setup + build + test + compile)
   - npm run publish
 
