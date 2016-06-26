@@ -16,11 +16,11 @@ install:
   - npm install
 
 script:
+  # npm (setup + build + test + compile + copy), should run first to set up static directory
+  - npm run publish
   # python, we run lint with coverage and display coverage output
   - bin/pylint --python=python
   - bin/coverage --python=python
-  # npm (setup + build + test + compile)
-  - npm run publish
 
 after_success:
   coveralls
