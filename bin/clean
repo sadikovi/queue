@@ -10,7 +10,7 @@ find $ROOT_DIR -name "*.pyc" -type f -not -path "$ROOT_DIR/venv/*" | xargs rm -f
 # delete target directory
 rm -rf $ROOT_DIR/target
 # delete static folder with artefacts
-rm -rf $ROOT_DIR/static
+rm -rf $ROOT_DIR/web/static
 
 # delete distribution files (directory and generated MANIFEST)
 rm -rf $ROOT_DIR/queue.egg-info

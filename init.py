@@ -11,3 +11,6 @@ LIB_PATH = os.path.join(ROOT_PATH, "lib")
 WEB_PATH = os.path.join(ROOT_PATH, "web")
 # Directory for serving static files
 STATIC_PATH = os.path.join(WEB_PATH, "static")
+
+# Application version
+VERSION = "0.0.1"

@@ -2,7 +2,7 @@
 
 import sys
 from setuptools import setup, Command
-from init import LIB_PATH
+from init import LIB_PATH, VERSION
 
 # Currently Python 2.7 is supported
 PYTHON_VERSION_MAJOR = 2
@@ -50,7 +50,7 @@ class QueueServerCommand(Command):
 
 setup(
     name="queue",
-    version="0.0.1",
+    version=VERSION,
     description="Improved job scheduler for Apache Spark",
     long_description="Improved job scheduler for Apache Spark",
     author="Ivan Sadikov",
