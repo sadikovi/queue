@@ -11,10 +11,31 @@
 
     <title>{% block title %}{% endblock %} &middot; Queue</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/static/index.min.css">
   </head>
   <body>
     <div class="page large margin-bottom container">
-      Hello world!
+      <div class="columns">
+        <div class="three-fourths column">
+          Main data
+        </div>
+        <div class="one-fourth column">
+          <nav class="menu">
+            <div class="menu-heading">Queue 0.0.1</div>
+            <div class="menu-item">
+              <span class="octicon octicon-server text-mute"></span>
+              <span class="text-mute">Spark cluster:</span>
+              <span class="text-yellow">busy</span>
+            </div>
+            <div class="menu-item">
+              <span class="octicon octicon-git-compare text-mute"></span>
+              <span class="text-mute">Compare</span>
+            </div>
+            <div class="menu-heading">Misc</div>
+            <a class="menu-item" href="/api">API</a>
+          </nav>
+        </div>
+      </div>
     </div>
   </body>
 </html>

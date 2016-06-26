@@ -5,7 +5,7 @@ import cherrypy
 from jinja2 import Environment, FileSystemLoader
 from init import STATIC_PATH, WEB_PATH
 
-# Loading jinja templates
+# Loading jinja templates, we bind web directory to serve as collection of views
 env = Environment(loader=FileSystemLoader(os.path.join(WEB_PATH, "view")))
 TEMPLATE_HOME = "home.html"
 
