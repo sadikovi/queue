@@ -34,11 +34,17 @@ Now you can use `bin/python` and `bin/pip` to access python and pip of virtual e
 following commands to install dependencies.
 ```shell
 $ bin/pip install -r requirements.txt --upgrade --target lib/
-$ npm run setup
+$ npm install
 ```
 
-After that you are all set! To build SCSS scripts run `npm run build` and to compile CoffeeScript -
-`npm run compile`.
+The very first time it is recommended to run `npm run publish`. This will set up folders, compile
+and check scripts, run tests and prepare all files in `static` directory that is served when
+server is up.
+
+That is it! Now you can launch server using `bin/python setup.py queue_server` with specific
+arguments. After that, when you modify scripts, you can just run individual tasks defined
+`package.json`, e.g. run `npm run compile_coffee` to just recompile CoffeeScript in static folder.
+When you modify Python sources server restarts automatically.
 
 ## Test
 ### Run linters

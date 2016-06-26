@@ -3,10 +3,10 @@
 import os
 import cherrypy
 from jinja2 import Environment, FileSystemLoader
-from init import STATIC_PATH, WEB_PATH
+from init import STATIC_PATH
 
 # Loading jinja templates, we bind web directory to serve as collection of views
-env = Environment(loader=FileSystemLoader(os.path.join(WEB_PATH, "view")))
+env = Environment(loader=FileSystemLoader(os.path.join(STATIC_PATH, "view")))
 TEMPLATE_HOME = "home.html"
 
 """
@@ -24,10 +24,6 @@ def getConf(): # pragma: no cover
     conf = {
         "/": {
             "tools.gzip.on": True
-        },
-        "/favicon.ico": {
-            "tools.staticfile.on": True,
-            "tools.staticfile.filename": os.path.join(WEB_PATH, "favicon.ico")
         },
         "/static": {
             "tools.staticdir.on": True,

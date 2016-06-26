@@ -99,7 +99,7 @@ work/*
 
 # ignore npm and build artifacts
 node_modules/
-web/static/
+static/
 
 # ignore generated manifest
 MANIFEST

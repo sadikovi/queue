@@ -12,14 +12,17 @@
     "url": "https://github.com/sadikovi/queue/issues"
   },
   "scripts": {
-    "_compile_sass": "node-sass web/scss/index.scss --include-path node_modules --output-style compressed web/static/index.min.css",
-    "_copy_octicons": "for f in $(find node_modules/octicons/octicons/*); do echo $f; done",
-    "setup": "if [ ! -d \"node_modules\" ]; then npm install; fi; if [ ! -d \"web/static\" ]; then mkdir -p web/static; fi",
-    "build": "npm run _copy_octicons && npm run _compile_sass",
-    "lint": "coffeelint -f coffeelint.json web/coffee",
-    "compile": "browserify -t [coffeeify --no-header --compile] --extension='.coffee' web/coffee/*.coffee | uglifyjs - -o web/static/index.min.js -c -m",
+    "setup": "if [ ! -d \"static\" ]; then mkdir static; fi",
+    "compile_sass": "node-sass web/scss/index.scss --include-path node_modules --output-style compressed static/index.min.css",
+    "compile_coffee": "browserify -t [coffeeify --no-header -c] --extension='.coffee' web/coffee/*.coffee | uglifyjs - -o static/index.min.js -c -m",
+    "compile": "npm run compile_sass && npm run compile_coffee",
+    "lint": "coffeelint -f coffeelint.json web/coffee && coffeelint -f coffeelint.json web/spec",
     "test": "jasmine-node --coffee web/spec",
-    "publish": "npm run setup && npm run build && npm run lint && npm run test && npm run compile"
+    "build": "npm run lint && npm run test && npm run compile",
+    "misc_copy_octicons": "for f in $(find node_modules/octicons/octicons -type f \\( -name '*.eot' -or -name '*.ttf' -or -name '*.svg' -or -name '*.woff' \\)); do cp $f static/; done",
+    "misc_copy_favicon": "cp web/favicon.ico static",
+    "misc_copy_view": "cp -r web/view static",
+    "publish": "npm run setup && npm run build && npm run misc_copy_octicons && npm run misc_copy_favicon && npm run misc_copy_view"
   },
   "dependencies": {
     "octicons": "^3.5.0"
