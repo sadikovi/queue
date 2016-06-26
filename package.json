@@ -13,7 +13,7 @@
   },
   "scripts": {
     "_compile_sass": "node-sass web/scss/index.scss --include-path node_modules --output-style compressed web/static/index.min.css",
-    "_copy_octicons": "cp node_modules/octicons/octicons/*.{eot,svg,ttf,woff} web/static",
+    "_copy_octicons": "for f in $(find node_modules/octicons/octicons/*.{eot,svg,ttf,woff}); do cp $f web/static/; done",
     "setup": "if [ ! -d \"node_modules\" ]; then npm install; fi; if [ ! -d \"web/static\" ]; then mkdir -p web/static; fi",
     "build": "npm run _copy_octicons && npm run _compile_sass",
     "lint": "coffeelint -f coffeelint.json web/coffee",
