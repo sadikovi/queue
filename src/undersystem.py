@@ -42,8 +42,9 @@ class Link(object):
 
 class SubmissionRequest(object):
     """
-    Request for job submission, logic is defined in subclasses, e.g. building shell command from
-    options provided and submitting through Java API.
+    Abstract class for job submission, logic is defined in subclasses, e.g. building shell command
+    from options provided and submitting through Java API. Instance of this class has all
+    information to launch process or retrieve status.
     """
     def __init__(self):
         raise StandardError("Cannot be instantiated")
@@ -51,7 +52,7 @@ class SubmissionRequest(object):
     def submit(self, **kwargs):
         """
         Submit request to the underlying system. For example, for Spark it is invoking process to
-        launch Spark job using `spark-submit`.
+        launch Spark job using `spark-submit`. Note that this method should be asynchronous.
 
         :param **kwargs: different parameters to submit request
         """
