@@ -35,20 +35,24 @@ class LinkSuite(unittest.TestCase):
 class SubmissionRequestSuite(unittest.TestCase):
     def test_init(self):
         with self.assertRaises(StandardError):
-            a = us.SubmissionRequest()
+            us.SubmissionRequest()
 
     def test_submit(self):
+        # pylint: disable=W0223,W0231
         class TestSubmit(us.SubmissionRequest):
             def __init__(self):
                 pass
-        a = TestSubmit()
+        # pylint: enable=W0223,W0231
+        request = TestSubmit()
         with self.assertRaises(NotImplementedError):
-            a.submit()
+            request.submit()
 
 # Dummy system interface
+# pylint: disable=W0223,W0231
 class TestUnderSystemInterface(us.UnderSystemInterface):
     def __init__(self):
         pass
+# pylint: enable=W0223,W0231
 
 class UnderSystemInterfaceSuite(unittest.TestCase):
     def setUp(self):
@@ -56,7 +60,7 @@ class UnderSystemInterfaceSuite(unittest.TestCase):
 
     def test_init(self):
         with self.assertRaises(StandardError):
-            a = us.UnderSystemInterface()
+            us.UnderSystemInterface()
 
     def test_name(self):
         with self.assertRaises(NotImplementedError):

@@ -37,6 +37,7 @@ persistent=yes
 # --disable=W"
 # C0111 Missing docstring
 # I0011 Warning locally suppressed using disable-msg
+# I0012 Warning locally suppressed using enable-msg
 # W0142 Used * or * magic* Used when a function or method is called using *args or **kwargs to dispatch arguments.
 # W0613 Unused argument %r Used when a function or method argument is not used.
 # R0201 Method could be a function
@@ -45,7 +46,7 @@ persistent=yes
 # R0921,R0922 Is raised when abstract classes are used in different module
 # R0401(cyclic-import) we have too many of them
 # W0122(exec-used) exec is used in openshift
-disable=C0111,I0011,W0142,R0201,E1103,W0122,E0401,E0611,W0201
+disable=C0111,I0011,I0012,W0142,R0201,E1103,W0122,E0401,E0611,W0201,
 
 
 [REPORTS]
