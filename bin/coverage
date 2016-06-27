@@ -19,5 +19,5 @@ if [ -z "$WHICH_PYTHON" ]; then
   exit 1
 fi
 
-$WHICH_PYTHON $ROOT_DIR/run_coverage.py run --source=src $ROOT_DIR/setup.py test && \
-  $WHICH_PYTHON $ROOT_DIR/run_coverage.py report
+$WHICH_PYTHON $ROOT_DIR/run_coverage.py run --branch --source=src $ROOT_DIR/setup.py test && \
+  $WHICH_PYTHON $ROOT_DIR/run_coverage.py report -m
