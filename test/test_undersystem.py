@@ -14,17 +14,29 @@ class StatusSuite(unittest.TestCase):
         self.assertEqual(status.name, None)
         self.assertEqual(status.desc, None)
 
-    def test_statusAvailable(self):
+    def test_system_available(self):
         self.assertEqual(us.AVAILABLE.name, "available")
         self.assertEqual(us.AVAILABLE.desc, "Available")
 
-    def test_statusBusy(self):
+    def test_system_busy(self):
         self.assertEqual(us.BUSY.name, "busy")
         self.assertEqual(us.BUSY.desc, "Busy")
 
-    def test_statusUnavailable(self):
+    def test_system_unavailable(self):
         self.assertEqual(us.UNAVAILABLE.name, "unavailable")
         self.assertEqual(us.UNAVAILABLE.desc, "Unavailable")
+
+    def test_submit_pending(self):
+        self.assertEqual(us.PENDING.name, "pending")
+        self.assertEqual(us.PENDING.desc, "Pending")
+
+    def test_submit_success(self):
+        self.assertEqual(us.SUCCESS.name, "success")
+        self.assertEqual(us.SUCCESS.desc, "Success")
+
+    def test_submit_failure(self):
+        self.assertEqual(us.FAILURE.name, "failure")
+        self.assertEqual(us.FAILURE.desc, "Failure")
 
 class LinkSuite(unittest.TestCase):
     def test_link(self):
@@ -32,20 +44,36 @@ class LinkSuite(unittest.TestCase):
         self.assertEqual(link.name, "name")
         self.assertEqual(link.link, "http://test.com")
 
+# Dummy submission class
+# pylint: disable=W0223,W0231
+class TestSubmit(us.SubmissionRequest):
+    def __init__(self):
+        pass
+# pylint: enable=W0223,W0231
+
 class SubmissionRequestSuite(unittest.TestCase):
+    def setUp(self):
+        self.request_submit = TestSubmit()
+
     def test_init(self):
         with self.assertRaises(StandardError):
             us.SubmissionRequest()
 
     def test_submit(self):
-        # pylint: disable=W0223,W0231
-        class TestSubmit(us.SubmissionRequest):
-            def __init__(self):
-                pass
-        # pylint: enable=W0223,W0231
-        request = TestSubmit()
         with self.assertRaises(NotImplementedError):
-            request.submit()
+            self.request_submit.submit()
+
+    def test_workingDirectory(self):
+        with self.assertRaises(NotImplementedError):
+            self.request_submit.workingDirectory()
+
+    def test_finished(self):
+        with self.assertRaises(NotImplementedError):
+            self.request_submit.finished()
+
+    def test_close(self):
+        with self.assertRaises(NotImplementedError):
+            self.request_submit.close()
 
 # Dummy system interface
 # pylint: disable=W0223,W0231
