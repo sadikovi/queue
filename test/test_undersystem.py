@@ -59,21 +59,25 @@ class SubmissionRequestSuite(unittest.TestCase):
         with self.assertRaises(StandardError):
             us.SubmissionRequest()
 
-    def test_submit(self):
+    def test_dispatch(self):
         with self.assertRaises(NotImplementedError):
-            self.request_submit.submit()
+            self.request_submit.dispatch()
 
     def test_workingDirectory(self):
         with self.assertRaises(NotImplementedError):
             self.request_submit.workingDirectory()
 
-    def test_finished(self):
+    def test_ping(self):
         with self.assertRaises(NotImplementedError):
-            self.request_submit.finished()
+            self.request_submit.ping()
 
     def test_close(self):
         with self.assertRaises(NotImplementedError):
             self.request_submit.close()
+
+    def test_interface(self):
+        with self.assertRaises(NotImplementedError):
+            self.request_submit.interface()
 
 # Dummy system interface
 # pylint: disable=W0223,W0231
@@ -107,6 +111,10 @@ class UnderSystemInterfaceSuite(unittest.TestCase):
             self.testus.request()
         with self.assertRaises(NotImplementedError):
             self.testus.request(a=1, b=2)
+
+    def test_canCreateRequest(self):
+        with self.assertRaises(NotImplementedError):
+            self.testus.can_create_request()
 
     def test_available(self):
         self.assertEqual(self.testus.available(), us.AVAILABLE.desc)
