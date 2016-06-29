@@ -104,6 +104,12 @@ class SubmissionRequestSuite(unittest.TestCase):
         with self.assertRaises(StandardError):
             us.SubmissionRequest()
 
+    def test_uid(self):
+        with self.assertRaises(NotImplementedError):
+            # pylint: disable=W0104
+            self.request_submit.uid
+            # pylint: enable=W0104
+
     def test_dispatch(self):
         with self.assertRaises(NotImplementedError):
             self.request_submit.dispatch()

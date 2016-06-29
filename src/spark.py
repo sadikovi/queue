@@ -1,0 +1,147 @@
+#!/usr/bin/env python
+
+import json
+import os
+import urllib2
+import src.undersystem as undersystem
+
+class SparkSubmissionRequest(undersystem.SubmissionRequest):
+    """
+    Spark submission request is low-level representation of Spark job with some extra handling of
+    file system, and pinging job to retrieve status.
+    """
+    def __init__(self, uid, spark_backend, working_directory):
+        # normalize path and check on existence, also check we have read-write access to the folder
+        normpath = os.path.realpath(os.path.abspath(working_directory))
+        if not os.path.isdir(normpath):
+            raise StandardError("Path %s is not a directory" % normpath)
+        if not os.access(normpath, os.R_OK) or not os.access(normpath, os.W_OK):
+            raise StandardError("Insufficient permissions for %s, expected read-write" % normpath)
+        self._uid = uid
+        self.working_directory = normpath
+        self.spark_backend = spark_backend
+
+    @property
+    def uid(self):
+        """
+        Unique identifier for Spark submission request.
+
+        :return: Spark submission request uid
+        """
+        return self._uid
+
+    def workingDirectory(self):
+        """
+        Get unique working directory for request.
+
+        :return: working directory for request
+        """
+        return self.working_directory
+
+    def interface(self):
+        """
+        Reference to the backend that was used to create submission request.
+
+        :return: SparkBackend instance
+        """
+        return self.spark_backend
+
+    def dispatch(self):
+        raise NotImplementedError()
+
+    def ping(self):
+        raise NotImplementedError()
+
+    def close(self):
+        raise NotImplementedError()
+
+class SparkBackend(undersystem.UnderSystemInterface):
+    """
+    Spark Backend as implementation of UnderSystemInterface. Provides access to check status and
+    whether or not job can be submitted.
+    """
+    def __init__(self, master_url, rest_url, num_slots):
+        """
+        Create instance of Spark backend.
+
+        :param master_url: Spark Master URL, e.g. spark://sandbox:7077
+        :param rest_url: Spark UI (REST) URL, normally it is http://localhost:8080
+        :param num_slots: number of slots available for submission, i.e. number of concurrent jobs
+        """
+        self.master_url = undersystem.URI(master_url)
+        if self.master_url.scheme != "spark":
+            raise StandardError("Expected 'spark' scheme for url %s", self.master_url.url)
+        self.rest_url = undersystem.URI(rest_url, "Spark UI")
+        self.num_slots = int(num_slots)
+
+    def applications(self, uri):
+        """
+        Fetch applications for Spark REST url. This method returns list of dict object, each of
+        them contains "id", "name", and "completed" status of a job. If URL is invalid or Spark
+        cluster cannot be reached, None is returned.
+
+        :param uri: Spark REST url
+        :return: list of Spark applications as dict objects
+        """
+        try:
+            # perform request with timeout of 30 seconds
+            fileobject = urllib2.urlopen("%s/api/v1/applications" % uri, timeout=30)
+        except StandardError:
+            return None
+        else:
+            # when requested, Spark returns list of jobs
+            apps = json.loads(fileobject.read())
+            parsed = []
+            for app in apps:
+                if "id" in app and "name" in app and "attempts" in app:
+                    completed = True
+                    for attempt in app["attempts"]:
+                        completed = completed and attempt["completed"]
+                    parsed.append({"id": app["id"], "name": app["name"], "completed": completed})
+            return parsed
+
+    def name(self):
+        """
+        Name for Spark cluster.
+
+        :return: Spark cluster alias
+        """
+        return "Spark cluster"
+
+    def link(self):
+        """
+        Return link for Spark UI.
+
+        :return: uri for Spark UI
+        """
+        return self.rest_url
+
+    def can_create_request(self):
+        """
+        Whether or not Spark can submit a job. This is valid operation, if status is either
+        AVAILABLE or BUSY, and number of slots are greater than number of running applications.
+
+        :return: True if Spark can submit job, False otherwise
+        """
+        apps = self.applications(self.rest_url)
+        if apps is None:
+            return False
+        running = [x for x in apps if not x["completed"]]
+        return len(running) < self.num_slots
+
+    def status(self):
+        """
+        Status of Spark cluster, based on `applications()` method. If applications are allcompleted,
+        we say that cluster is available, as nothing is running. If at least one application is
+        running - cluster is busy, in any other cases - cluster is unavailable.
+
+        :return: status as one of AVAILABLE, BUSY, UNAVAILABLE
+        """
+        apps = self.applications(self.rest_url)
+        if apps is None:
+            return undersystem.UNAVAILABLE
+        running = [x for x in apps if not x["completed"]]
+        return undersystem.BUSY if running else undersystem.AVAILABLE
+
+    def request(self):
+        raise NotImplementedError()

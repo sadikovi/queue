@@ -91,6 +91,15 @@ class SubmissionRequest(object):
     def __init__(self):
         raise StandardError("Cannot be instantiated")
 
+    @property
+    def uid(self):
+        """
+        Unique identifier for submission request, must be globally unique.
+
+        :return: submission request uid
+        """
+        raise NotImplementedError()
+
     def interface(self):
         """
         Return pointer to interface that was used to create instance. Note that interface is always
@@ -158,7 +167,7 @@ class UnderSystemInterface(object):
         Return current status of the system as one of predefined statuses AVAILABLE, BUSY,
         UNAVAILABLE defined above.
 
-        :return: system status as Status class
+        :return: system status as Status class, either AVAILABLE, BUSY, or UNAVAILABLE
         """
         raise NotImplementedError()
 
