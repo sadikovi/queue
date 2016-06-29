@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
-"""
-Module provides means to create interface for under-system, e.g. Spark to report status,
-availability, and submission procedure.
-"""
+import urlparse
+
+# Module provides means to create interface for under-system, e.g. Spark to report status,
+# availability, and submission procedure. Every backend that implements UnderSystemInterface should
+# also overwrite SubmissionRequest.
 
 class Status(object):
     """
@@ -35,19 +36,51 @@ SUCCESS = Status("success", "Success")
 # Submission is finished with error
 FAILURE = Status("failure", "Failure")
 
-class Link(object):
+class URI(object):
     """
-    Link class to consolidate information about system URL.
+    URI class to keep information about URL and components, parses and validates components
     """
-    def __init__(self, link, name):
-        """
-        Create Link instance with provided parameters, note that those should not be None.
+    def __init__(self, rawURI, alias=None):
+        uri = urlparse.urlsplit(rawURI)
+        # we expect scheme, hostname and port to be set, otherwise uri is considered invalid
+        if not uri.port or not uri.hostname or not uri.scheme:
+            raise StandardError("Invalid URI - expected host, port and scheme from %s" % rawURI)
+        self._host = uri.hostname
+        self._port = int(uri.port)
+        self._scheme = uri.scheme
+        self._netloc = uri.netloc
+        self._fragment = uri.fragment
+        self._url = uri.geturl()
+        # Alias for URL if it is too long, if None provided url is used
+        self._alias = alias
 
-        :param link: URI to the system UI, e.g. http://localhost:8080
-        :param name: placeholder to use in case URI is fairly long
-        """
-        self.link = link
-        self.name = name
+    @property
+    def host(self):
+        return self._host
+
+    @property
+    def port(self):
+        return self._port
+
+    @property
+    def scheme(self):
+        return self._scheme
+
+    @property
+    def netloc(self):
+        return self._netloc
+
+    @property
+    def fragment(self):
+        return self._fragment
+
+    @property
+    def url(self):
+        return self._url
+
+    @property
+    def alias(self):
+        return self._alias if self._alias else self._url
 
 class SubmissionRequest(object):
     """
@@ -133,7 +166,7 @@ class UnderSystemInterface(object):
         """
         Link to the system UI, if available, otherwise should return None.
 
-        :return: Link instance pointing to the system UI
+        :return: URI instance pointing to the system UI
         """
         raise NotImplementedError()
 

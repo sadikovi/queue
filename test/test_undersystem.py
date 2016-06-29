@@ -38,11 +38,56 @@ class StatusSuite(unittest.TestCase):
         self.assertEqual(us.FAILURE.name, "failure")
         self.assertEqual(us.FAILURE.desc, "Failure")
 
-class LinkSuite(unittest.TestCase):
-    def test_link(self):
-        link = us.Link("http://test.com", "name")
-        self.assertEqual(link.name, "name")
-        self.assertEqual(link.link, "http://test.com")
+class URISuite(unittest.TestCase):
+    def setUp(self):
+        self.uri1 = us.URI("http://localhost:8080", "Spark UI")
+        self.uri2 = us.URI("spark://sandbox:7077")
+
+    def test_init(self):
+        uri = us.URI("http://localhost:8080")
+        self.assertNotEqual(uri, None)
+
+    def test_invalidScheme(self):
+        with self.assertRaises(StandardError):
+            us.URI("localhost:8080")
+
+    def test_invalidHost(self):
+        with self.assertRaises(StandardError):
+            us.URI("http://:8080")
+
+    def test_invalidPort(self):
+        with self.assertRaises(StandardError):
+            us.URI("http://localhost")
+        with self.assertRaises(ValueError):
+            us.URI("http://localhost:ABC")
+
+    def test_host(self):
+        self.assertEqual(self.uri1.host, "localhost")
+        self.assertEqual(self.uri2.host, "sandbox")
+
+    def test_port(self):
+        self.assertEqual(self.uri1.port, 8080)
+        self.assertEqual(self.uri2.port, 7077)
+
+    def test_scheme(self):
+        self.assertEqual(self.uri1.scheme, "http")
+        self.assertEqual(self.uri2.scheme, "spark")
+
+    def test_netloc(self):
+        self.assertEqual(self.uri1.netloc, "localhost:8080")
+        self.assertEqual(self.uri2.netloc, "sandbox:7077")
+
+    def test_fragment(self):
+        self.assertEqual(self.uri1.fragment, "")
+        self.assertEqual(self.uri2.fragment, "")
+
+    def test_url(self):
+        self.assertEqual(self.uri1.url, "http://localhost:8080")
+        self.assertEqual(self.uri2.url, "spark://sandbox:7077")
+
+    def test_alias(self):
+        self.assertEqual(self.uri1.alias, "Spark UI")
+        self.assertEqual(self.uri2.alias, "spark://sandbox:7077")
 
 # Dummy submission class
 # pylint: disable=W0223,W0231
@@ -129,7 +174,7 @@ class UnderSystemInterfaceSuite(unittest.TestCase):
 def suites():
     return [
         StatusSuite,
-        LinkSuite,
+        URISuite,
         SubmissionRequestSuite,
         UnderSystemInterfaceSuite
     ]
