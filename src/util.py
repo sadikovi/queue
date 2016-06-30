@@ -10,6 +10,7 @@ def readwriteDirectory(unresolved_directory):
     also check read-write access to the directory.
 
     :param unresolved_directory: unresolved directory
+    :return: fully resolved absolute path as directory with read-write access
     """
     normpath = os.path.realpath(os.path.abspath(unresolved_directory))
     if not os.path.isdir(normpath):

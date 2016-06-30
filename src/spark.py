@@ -10,11 +10,16 @@ class SparkSubmissionRequest(undersystem.SubmissionRequest):
     Spark submission request is low-level representation of Spark job with some extra handling of
     file system, and pinging job to retrieve status.
     """
-    def __init__(self, uid, spark_backend, working_directory):
+    def __init__(self, uid, name, backend, working_directory, spark_options, job_options, jar):
         self._uid = uid
+        self.name = name
+        self.spark_backend = backend
         # normalize path and check on existence, also check we have read-write access to the folder
         self.working_directory = util.readwriteDirectory(working_directory)
-        self.spark_backend = spark_backend
+        # build command from options, currently just assign them
+        self.spark_options = spark_options
+        self.job_options = job_options
+        self.jar = jar
 
     @property
     def uid(self):
@@ -128,9 +133,9 @@ class SparkBackend(undersystem.UnderSystemInterface):
 
     def status(self):
         """
-        Status of Spark cluster, based on `applications()` method. If applications are allcompleted,
-        we say that cluster is available, as nothing is running. If at least one application is
-        running - cluster is busy, in any other cases - cluster is unavailable.
+        Status of Spark cluster, based on `applications()` method. If all applications are
+        completed, we say that cluster is available, as nothing is running. If at least one
+        application is running - cluster is busy, in any other cases - cluster is unavailable.
 
         :return: status as one of AVAILABLE, BUSY, UNAVAILABLE
         """
@@ -140,5 +145,26 @@ class SparkBackend(undersystem.UnderSystemInterface):
         running = [x for x in apps if not x["completed"]]
         return undersystem.BUSY if running else undersystem.AVAILABLE
 
-    def request(self):
+    def request(self, **kwargs):
+        """
+        Create new SparkSubmissionRequest based on options passed. This will create unique job
+        directory for submission request, parse Spark and job specific options.
+
+        :param **kwargs: method attributes for extracting Spark options
+        :return: Spark submission request
+        """
+        # Unique job directory as subdirectory of SparkBackend root
+        # if not isinstance(uid, types.StringType):
+        #     raise StandardError("UID is not of String type")
+        # if not uid.isalnum():
+        #     raise StandardError("UID is not alphanumeric")
+        # job_dir = os.path.join(self.working_directory, uid)
+        # Attempt to create directory on file system, this will fail if directory already exists
+        # os.mkdir(job_dir)
+        # Parse system and job options
+        # spark_options = raw_system_options
+        # job_options = raw_options
+        # Parse files to extract jar
+        # jar = files
+        # return SparkSubmissionRequest(uid, name, self, job_dir, spark_options, job_options, jar)
         raise NotImplementedError()

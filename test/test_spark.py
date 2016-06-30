@@ -9,7 +9,7 @@ import src.undersystem as undersystem
 
 class SparkSubmissionRequestSuite(unittest.TestCase):
     def setUp(self):
-        self.req = spark.SparkSubmissionRequest("abc", None, ".")
+        self.req = spark.SparkSubmissionRequest("uid", "name", None, ".", [], [], "jar")
 
     @mock.patch("src.util.os")
     def test_init(self, mock_os):
@@ -19,21 +19,22 @@ class SparkSubmissionRequestSuite(unittest.TestCase):
         mock_os.path.isdir.return_value = True
         mock_os.access.return_value = True
 
-        req = spark.SparkSubmissionRequest("abc", None, working_dir)
-        self.assertEqual(req.uid, "abc")
+        req = spark.SparkSubmissionRequest("uid", "name", None, working_dir, [], [], "jar")
+        self.assertEqual(req.uid, "uid")
+        self.assertEqual(req.name, "name")
         self.assertEqual(req.spark_backend, None)
         self.assertEqual(req.working_directory, working_dir)
 
     def test_init_none_dir(self):
         with self.assertRaises(StandardError):
-            spark.SparkSubmissionRequest("abc", None, None)
+            spark.SparkSubmissionRequest("uid", "name", None, None, [], [], "jar")
 
     @mock.patch("src.util.os")
     def test_init_nonexistent_dir(self, mock_os):
         mock_os.path.isdir.return_value = False
 
         try:
-            spark.SparkSubmissionRequest("abc", None, "nonexistent path")
+            spark.SparkSubmissionRequest("uid", "name", None, "nonexistent path", [], [], "jar")
         except StandardError as err:
             self.assertTrue("not a directory" in str(err))
 
@@ -43,7 +44,7 @@ class SparkSubmissionRequestSuite(unittest.TestCase):
         mock_os.access.return_value = False
 
         try:
-            spark.SparkSubmissionRequest("abc", None, "readonly path")
+            spark.SparkSubmissionRequest("uid", "name", None, "readonly path", [], [], "jar")
         except StandardError as err:
             self.assertTrue("Insufficient permissions" in str(err))
 
@@ -52,7 +53,7 @@ class SparkSubmissionRequestSuite(unittest.TestCase):
 
     def test_interface(self):
         self.assertEqual(self.req.interface(), None)
-        req = spark.SparkSubmissionRequest("abc", "spark", ".")
+        req = spark.SparkSubmissionRequest("uid", "name", "spark", ".", [], [], "jar")
         self.assertEqual(req.interface(), "spark")
 
     def test_dispatch(self):
