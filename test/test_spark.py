@@ -11,10 +11,10 @@ class SparkSubmissionRequestSuite(unittest.TestCase):
     def setUp(self):
         self.req = spark.SparkSubmissionRequest("abc", None, ".")
 
-    @mock.patch("src.spark.os")
+    @mock.patch("src.util.os")
     def test_init(self, mock_os):
         working_dir = "/some/dir"
-        mock_os.path.abspath.return_value = working_dir
+        mock_os.readwriteDirectory.return_value = working_dir
         mock_os.path.realpath.return_value = working_dir
         mock_os.path.isdir.return_value = True
         mock_os.access.return_value = True
@@ -28,7 +28,7 @@ class SparkSubmissionRequestSuite(unittest.TestCase):
         with self.assertRaises(StandardError):
             spark.SparkSubmissionRequest("abc", None, None)
 
-    @mock.patch("src.spark.os")
+    @mock.patch("src.util.os")
     def test_init_nonexistent_dir(self, mock_os):
         mock_os.path.isdir.return_value = False
 
@@ -37,7 +37,7 @@ class SparkSubmissionRequestSuite(unittest.TestCase):
         except StandardError as err:
             self.assertTrue("not a directory" in str(err))
 
-    @mock.patch("src.spark.os")
+    @mock.patch("src.util.os")
     def test_init_readonly_dir(self, mock_os):
         mock_os.path.isdir.return_value = True
         mock_os.access.return_value = False
@@ -73,37 +73,54 @@ class SparkBackendSuite(unittest.TestCase):
         class MockResponse(object):
             def read(self):
                 return None
-        self.interface = spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", 3)
+        self.spark = spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", 3, ".")
         self.mock_response = MockResponse()
         self.mock_applications = mock.Mock()
 
     def test_init_wrong_slots(self):
         with self.assertRaises(ValueError):
-            spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", "abc")
+            spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", "abc", ".")
 
     def test_init_wrong_master_url(self):
         with self.assertRaises(StandardError):
-            spark.SparkBackend("http://sandbox:7077", "http://localhost:8080", 3)
+            spark.SparkBackend("http://sandbox:7077", "http://localhost:8080", 3, ".")
 
     def test_init_wrong_rest_url(self):
         with self.assertRaises(StandardError):
-            spark.SparkBackend("http://sandbox:7077", "abc", 3)
+            spark.SparkBackend("http://sandbox:7077", "abc", 3, ".")
+
+    @mock.patch("src.util.os")
+    def test_init_wrong_directory(self, mock_os):
+        mock_os.path.abspath.return_value = "/tmp"
+        mock_os.path.realpath.return_value = "/tmp"
+        mock_os.path.isdir.return_value = False
+        with self.assertRaises(StandardError):
+            spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", 3, ".")
+
+    @mock.patch("src.util.os")
+    def test_init_wrong_permissions(self, mock_os):
+        mock_os.abspath.return_value = "/tmp"
+        mock_os.normpath.return_value = "/tmp"
+        mock_os.isdir.return_value = True
+        mock_os.access.side_effect = False
+        with self.assertRaises(StandardError):
+            spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", 3, ".")
 
     def test_name(self):
-        self.assertEqual(self.interface.name(), "Spark cluster")
+        self.assertEqual(self.spark.name(), "Spark cluster")
 
     def test_link(self):
-        self.assertEqual(self.interface.link().alias, "Spark UI")
-        self.assertEqual(self.interface.link().url, "http://localhost:8080")
+        self.assertEqual(self.spark.link().alias, "Spark UI")
+        self.assertEqual(self.spark.link().url, "http://localhost:8080")
 
     def test_request(self):
         with self.assertRaises(NotImplementedError):
-            self.interface.request()
+            self.spark.request()
 
     @mock.patch("src.spark.urllib2")
     def test_applications_fail_request(self, mock_urllib2):
         mock_urllib2.urlopen.side_effect = urllib2.URLError("Test")
-        self.assertEqual(self.interface.applications("dummy"), None)
+        self.assertEqual(self.spark.applications("dummy"), None)
 
     @mock.patch("src.spark.urllib2")
     @mock.patch("src.spark.json")
@@ -111,14 +128,14 @@ class SparkBackendSuite(unittest.TestCase):
         mock_urllib2.urlopen.return_value = self.mock_response
         mock_json.loads.side_effect = ValueError("Test")
         with self.assertRaises(ValueError):
-            self.interface.applications("url")
+            self.spark.applications("url")
 
     @mock.patch("src.spark.urllib2")
     @mock.patch("src.spark.json")
     def test_applications_no_data(self, mock_json, mock_urllib2):
         mock_urllib2.urlopen.return_value = self.mock_response
         mock_json.loads.return_value = []
-        self.assertEqual(self.interface.applications("url"), [])
+        self.assertEqual(self.spark.applications("url"), [])
 
     @mock.patch("src.spark.urllib2")
     @mock.patch("src.spark.json")
@@ -127,7 +144,7 @@ class SparkBackendSuite(unittest.TestCase):
         mock_json.loads.return_value = [
             {"a": "2", "b": "abc", "c": [{"completed": True}]}
         ]
-        self.assertEqual(self.interface.applications("url"), [])
+        self.assertEqual(self.spark.applications("url"), [])
 
     @mock.patch("src.spark.urllib2")
     @mock.patch("src.spark.json")
@@ -137,7 +154,7 @@ class SparkBackendSuite(unittest.TestCase):
             {"id": "1", "name": "abc", "attempts": [{"completed": True}, {"completed": True}]},
             {"id": "2", "name": "abc", "attempts": [{"completed": True}]}
         ]
-        self.assertEqual(self.interface.applications("url"), [
+        self.assertEqual(self.spark.applications("url"), [
             {"id": "1", "name": "abc", "completed": True},
             {"id": "2", "name": "abc", "completed": True}
         ])
@@ -150,52 +167,52 @@ class SparkBackendSuite(unittest.TestCase):
             {"id": "1", "name": "abc", "attempts": [{"completed": True}, {"completed": False}]},
             {"id": "2", "name": "abc", "attempts": [{"completed": True}]}
         ]
-        self.assertEqual(self.interface.applications("url"), [
+        self.assertEqual(self.spark.applications("url"), [
             {"id": "1", "name": "abc", "completed": False},
             {"id": "2", "name": "abc", "completed": True}
         ])
 
     def test_status_available_empty(self):
         self.mock_applications.return_value = []
-        self.interface.applications = self.mock_applications
-        self.assertEqual(self.interface.status(), undersystem.AVAILABLE)
+        self.spark.applications = self.mock_applications
+        self.assertEqual(self.spark.status(), undersystem.AVAILABLE)
 
     def test_status_available_complete(self):
         self.mock_applications.return_value = [
             {"id": "2", "name": "abc", "completed": True}
         ]
-        self.interface.applications = self.mock_applications
-        self.assertEqual(self.interface.status(), undersystem.AVAILABLE)
+        self.spark.applications = self.mock_applications
+        self.assertEqual(self.spark.status(), undersystem.AVAILABLE)
 
     def test_status_busy(self):
         self.mock_applications.return_value = [
             {"id": "2", "name": "abc", "completed": False}
         ]
-        self.interface.applications = self.mock_applications
-        self.assertEqual(self.interface.status(), undersystem.BUSY)
+        self.spark.applications = self.mock_applications
+        self.assertEqual(self.spark.status(), undersystem.BUSY)
 
     def test_status_unavailable(self):
         self.mock_applications.return_value = None
-        self.interface.applications = self.mock_applications
-        self.assertEqual(self.interface.status(), undersystem.UNAVAILABLE)
+        self.spark.applications = self.mock_applications
+        self.assertEqual(self.spark.status(), undersystem.UNAVAILABLE)
 
     def test_can_create_request_none(self):
         self.mock_applications.return_value = None
-        self.interface.applications = self.mock_applications
-        self.assertEqual(self.interface.can_create_request(), False)
+        self.spark.applications = self.mock_applications
+        self.assertEqual(self.spark.can_create_request(), False)
 
     def test_can_create_request_empty(self):
         self.mock_applications.return_value = []
-        self.interface.applications = self.mock_applications
-        self.assertEqual(self.interface.can_create_request(), True)
+        self.spark.applications = self.mock_applications
+        self.assertEqual(self.spark.can_create_request(), True)
 
     def test_can_create_request_running1(self):
         # less than max number of slots, one running application
         self.mock_applications.return_value = [
             {"id": "1", "name": "abc", "completed": False}
         ]
-        self.interface.applications = self.mock_applications
-        self.assertEqual(self.interface.can_create_request(), True)
+        self.spark.applications = self.mock_applications
+        self.assertEqual(self.spark.can_create_request(), True)
 
     def test_can_create_request_running2(self):
         # more or equal to max number of slots, one running application
@@ -205,8 +222,8 @@ class SparkBackendSuite(unittest.TestCase):
             {"id": "2", "name": "abc", "completed": False},
             {"id": "2", "name": "abc", "completed": False}
         ]
-        self.interface.applications = self.mock_applications
-        self.assertEqual(self.interface.can_create_request(), False)
+        self.spark.applications = self.mock_applications
+        self.assertEqual(self.spark.can_create_request(), False)
 
 # Load test suites
 def suites():

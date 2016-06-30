@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
 import json
-import os
 import urllib2
 import src.undersystem as undersystem
+import src.util as util
 
 class SparkSubmissionRequest(undersystem.SubmissionRequest):
     """
@@ -11,14 +11,9 @@ class SparkSubmissionRequest(undersystem.SubmissionRequest):
     file system, and pinging job to retrieve status.
     """
     def __init__(self, uid, spark_backend, working_directory):
-        # normalize path and check on existence, also check we have read-write access to the folder
-        normpath = os.path.realpath(os.path.abspath(working_directory))
-        if not os.path.isdir(normpath):
-            raise StandardError("Path %s is not a directory" % normpath)
-        if not os.access(normpath, os.R_OK) or not os.access(normpath, os.W_OK):
-            raise StandardError("Insufficient permissions for %s, expected read-write" % normpath)
         self._uid = uid
-        self.working_directory = normpath
+        # normalize path and check on existence, also check we have read-write access to the folder
+        self.working_directory = util.readwriteDirectory(working_directory)
         self.spark_backend = spark_backend
 
     @property
@@ -60,19 +55,21 @@ class SparkBackend(undersystem.UnderSystemInterface):
     Spark Backend as implementation of UnderSystemInterface. Provides access to check status and
     whether or not job can be submitted.
     """
-    def __init__(self, master_url, rest_url, num_slots):
+    def __init__(self, master_url, rest_url, num_slots, working_directory):
         """
         Create instance of Spark backend.
 
         :param master_url: Spark Master URL, e.g. spark://sandbox:7077
         :param rest_url: Spark UI (REST) URL, normally it is http://localhost:8080
         :param num_slots: number of slots available for submission, i.e. number of concurrent jobs
+        :param working_directory: working directory root, each job has a subdirectory under root
         """
         self.master_url = undersystem.URI(master_url)
         if self.master_url.scheme != "spark":
             raise StandardError("Expected 'spark' scheme for url %s", self.master_url.url)
         self.rest_url = undersystem.URI(rest_url, "Spark UI")
         self.num_slots = int(num_slots)
+        self.working_directory = util.readwriteDirectory(working_directory)
 
     def applications(self, uri):
         """
