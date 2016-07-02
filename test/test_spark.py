@@ -9,7 +9,8 @@ import src.spark as spark
 
 class SparkSubmissionRequestSuite(unittest.TestCase):
     def setUp(self):
-        self.req = spark.SparkSubmissionRequest("SPARK", ".", "spark-submit", {"a": 1}, "class",
+        self.req = spark.SparkSubmissionRequest("SPARK", ".", "spark-submit", "test",
+                                                "spark://master:7077", {"a": 1}, "class",
                                                 "jar", ["a", "b"])
 
     @mock.patch("src.util.os")
@@ -20,9 +21,12 @@ class SparkSubmissionRequestSuite(unittest.TestCase):
         mock_os.path.isdir.return_value = True
         mock_os.access.return_value = True
 
-        req = spark.SparkSubmissionRequest("SPARK", ".", "ss", {"a": 1}, "class", "jar", ["a", "b"])
+        req = spark.SparkSubmissionRequest("SPARK", ".", "ss", "name", "spark://master:7077",
+                                           {"a": 1}, "class", "jar", ["a", "b"])
         self.assertEqual(req.spark_code, "SPARK")
         self.assertEqual(req.spark_submit, "ss")
+        self.assertEqual(req.name, "name")
+        self.assertEqual(req.master_url, "spark://master:7077")
         self.assertEqual(req.working_directory, working_dir)
         self.assertEqual(req.spark_options, {"a": 1})
         self.assertEqual(req.main_class, "class")
@@ -31,14 +35,16 @@ class SparkSubmissionRequestSuite(unittest.TestCase):
 
     def test_init_none_dir(self):
         with self.assertRaises(StandardError):
-            spark.SparkSubmissionRequest("SPARK", None, "ss", {"a": 1}, "class", "jar", ["a", "b"])
+            spark.SparkSubmissionRequest("SPARK", None, "ss", "name", "spark://master:7077",
+                                         {"a": 1}, "class", "jar", ["a", "b"])
 
     @mock.patch("src.util.os")
     def test_init_nonexistent_dir(self, mock_os):
         mock_os.path.isdir.return_value = False
 
         try:
-            spark.SparkSubmissionRequest("SPARK", "nonexistent path", "ss", {}, "class", "jar", [])
+            spark.SparkSubmissionRequest("SPARK", "nonexistent path", "ss", "name",
+                                         "spark://master:7077", {}, "class", "jar", [])
         except StandardError as err:
             self.assertTrue("not a directory" in str(err))
 
@@ -48,9 +54,25 @@ class SparkSubmissionRequestSuite(unittest.TestCase):
         mock_os.access.return_value = False
 
         try:
-            spark.SparkSubmissionRequest("SPARK", "dir", "ss", {"a": 1}, "class", "jar", ["a", "b"])
+            spark.SparkSubmissionRequest("SPARK", "dir", "ss", "name", "spark://master:7077",
+                                         {"a": 1}, "class", "jar", ["a", "b"])
         except StandardError as err:
             self.assertTrue("Insufficient permissions" in str(err))
+
+    def test_shell(self):
+        expected = ["spark-submit", "--name", "test", "--master", "spark://master:7077", "--conf",
+                    "a=1", "--class", "class", "jar", "a", "b"]
+        # pylint: disable=W0212,protected-access
+        self.assertEqual(self.req._shell(), expected)
+        # pylint: enable=W0212,protected-access
+        # test for extended request
+        expected = ["ss", "--name", "name", "--master", "spark://master:7077", "--conf", "a=1",
+                    "--conf", "b=2", "--class", "class", "jar"]
+        req = spark.SparkSubmissionRequest("SPARK", ".", "ss", "name", "spark://master:7077",
+                                           {"a": 1, "b": 2}, "class", "jar", [])
+        # pylint: disable=W0212,protected-access
+        self.assertEqual(req._shell(), expected)
+        # pylint: enable=W0212,protected-access
 
     def test_working_directory(self):
         self.assertEqual(self.req.workingDirectory(), os.path.abspath("."))
@@ -81,14 +103,14 @@ class SparkBackendSuite(unittest.TestCase):
             @property
             def hex(self):
                 return "abcdef123456"
-        self.spark = spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", 3, ".")
+        self.spark = spark.SparkBackend("spark://master:7077", "http://localhost:8080", 3, ".")
         self.mock_response = MockResponse()
         self.mock_uuid = MockUUID()
         self.mock_applications = mock.Mock()
 
     def test_init_wrong_slots(self):
         with self.assertRaises(ValueError):
-            spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", "abc", ".")
+            spark.SparkBackend("spark://master:7077", "http://localhost:8080", "abc", ".")
 
     def test_init_wrong_master_url(self):
         with self.assertRaises(StandardError):
@@ -104,7 +126,7 @@ class SparkBackendSuite(unittest.TestCase):
         mock_os.path.realpath.return_value = "/tmp"
         mock_os.path.isdir.return_value = False
         with self.assertRaises(StandardError):
-            spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", 3, ".")
+            spark.SparkBackend("spark://master:7077", "http://localhost:8080", 3, ".")
 
     @mock.patch("src.util.os")
     def test_init_wrong_permissions(self, mock_os):
@@ -113,7 +135,7 @@ class SparkBackendSuite(unittest.TestCase):
         mock_os.isdir.return_value = True
         mock_os.access.side_effect = False
         with self.assertRaises(StandardError):
-            spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", 3, ".")
+            spark.SparkBackend("spark://master:7077", "http://localhost:8080", 3, ".")
 
     @mock.patch("src.spark.util.readonlyDirectory")
     @mock.patch("src.spark.util.readwriteDirectory")
@@ -124,7 +146,7 @@ class SparkBackendSuite(unittest.TestCase):
         # test when Spark home is set
         mock_r_dir.return_value = "/tmp"
         mock_rw_dir.return_value = "/tmp"
-        subm = spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", 3, ".", "/tmp")
+        subm = spark.SparkBackend("spark://master:7077", "http://localhost:8080", 3, ".", "/tmp")
         self.assertEqual(subm.spark_home, "/tmp")
         self.assertEqual(subm.spark_submit, "/tmp/bin/spark-submit")
 
@@ -141,7 +163,9 @@ class SparkBackendSuite(unittest.TestCase):
     @mock.patch("src.spark.urllib2")
     def test_applications_fail_request(self, mock_urllib2):
         mock_urllib2.urlopen.side_effect = urllib2.URLError("Test")
-        self.assertEqual(self.spark.applications("dummy"), None)
+        # pylint: disable=W0212,protected-access
+        self.assertEqual(self.spark._applications("dummy"), None)
+        # pylint: enable=W0212,protected-access
 
     @mock.patch("src.spark.urllib2")
     @mock.patch("src.spark.json")
@@ -149,14 +173,18 @@ class SparkBackendSuite(unittest.TestCase):
         mock_urllib2.urlopen.return_value = self.mock_response
         mock_json.loads.side_effect = ValueError("Test")
         with self.assertRaises(ValueError):
-            self.spark.applications("url")
+            # pylint: disable=W0212,protected-access
+            self.spark._applications("url")
+            # pylint: enable=W0212,protected-access
 
     @mock.patch("src.spark.urllib2")
     @mock.patch("src.spark.json")
     def test_applications_no_data(self, mock_json, mock_urllib2):
         mock_urllib2.urlopen.return_value = self.mock_response
         mock_json.loads.return_value = []
-        self.assertEqual(self.spark.applications("url"), [])
+        # pylint: disable=W0212,protected-access
+        self.assertEqual(self.spark._applications("url"), [])
+        # pylint: enable=W0212,protected-access
 
     @mock.patch("src.spark.urllib2")
     @mock.patch("src.spark.json")
@@ -165,7 +193,9 @@ class SparkBackendSuite(unittest.TestCase):
         mock_json.loads.return_value = [
             {"a": "2", "b": "abc", "c": [{"completed": True}]}
         ]
-        self.assertEqual(self.spark.applications("url"), [])
+        # pylint: disable=W0212,protected-access
+        self.assertEqual(self.spark._applications("url"), [])
+        # pylint: enable=W0212,protected-access
 
     @mock.patch("src.spark.urllib2")
     @mock.patch("src.spark.json")
@@ -175,10 +205,12 @@ class SparkBackendSuite(unittest.TestCase):
             {"id": "1", "name": "abc", "attempts": [{"completed": True}, {"completed": True}]},
             {"id": "2", "name": "abc", "attempts": [{"completed": True}]}
         ]
-        self.assertEqual(self.spark.applications("url"), [
+        # pylint: disable=W0212,protected-access
+        self.assertEqual(self.spark._applications("url"), [
             {"id": "1", "name": "abc", "completed": True},
             {"id": "2", "name": "abc", "completed": True}
         ])
+        # pylint: enable=W0212,protected-access
 
     @mock.patch("src.spark.urllib2")
     @mock.patch("src.spark.json")
@@ -188,43 +220,57 @@ class SparkBackendSuite(unittest.TestCase):
             {"id": "1", "name": "abc", "attempts": [{"completed": True}, {"completed": False}]},
             {"id": "2", "name": "abc", "attempts": [{"completed": True}]}
         ]
-        self.assertEqual(self.spark.applications("url"), [
+        # pylint: disable=W0212,protected-access
+        self.assertEqual(self.spark._applications("url"), [
             {"id": "1", "name": "abc", "completed": False},
             {"id": "2", "name": "abc", "completed": True}
         ])
+        # pylint: enable=W0212,protected-access
 
     def test_status_available_empty(self):
         self.mock_applications.return_value = []
-        self.spark.applications = self.mock_applications
+        # pylint: disable=W0212,protected-access
+        self.spark._applications = self.mock_applications
+        # pylint: enable=W0212,protected-access
         self.assertEqual(self.spark.status(), const.SYSTEM_AVAILABLE)
 
     def test_status_available_complete(self):
         self.mock_applications.return_value = [
             {"id": "2", "name": "abc", "completed": True}
         ]
-        self.spark.applications = self.mock_applications
+        # pylint: disable=W0212,protected-access
+        self.spark._applications = self.mock_applications
+        # pylint: enable=W0212,protected-access
         self.assertEqual(self.spark.status(), const.SYSTEM_AVAILABLE)
 
     def test_status_busy(self):
         self.mock_applications.return_value = [
             {"id": "2", "name": "abc", "completed": False}
         ]
-        self.spark.applications = self.mock_applications
+        # pylint: disable=W0212,protected-access
+        self.spark._applications = self.mock_applications
+        # pylint: enable=W0212,protected-access
         self.assertEqual(self.spark.status(), const.SYSTEM_BUSY)
 
     def test_status_unavailable(self):
         self.mock_applications.return_value = None
-        self.spark.applications = self.mock_applications
+        # pylint: disable=W0212,protected-access
+        self.spark._applications = self.mock_applications
+        # pylint: enable=W0212,protected-access
         self.assertEqual(self.spark.status(), const.SYSTEM_UNAVAILABLE)
 
     def test_can_create_request_none(self):
         self.mock_applications.return_value = None
-        self.spark.applications = self.mock_applications
+        # pylint: disable=W0212,protected-access
+        self.spark._applications = self.mock_applications
+        # pylint: enable=W0212,protected-access
         self.assertEqual(self.spark.can_create_request(), False)
 
     def test_can_create_request_empty(self):
         self.mock_applications.return_value = []
-        self.spark.applications = self.mock_applications
+        # pylint: disable=W0212,protected-access
+        self.spark._applications = self.mock_applications
+        # pylint: enable=W0212,protected-access
         self.assertEqual(self.spark.can_create_request(), True)
 
     def test_can_create_request_running1(self):
@@ -232,7 +278,9 @@ class SparkBackendSuite(unittest.TestCase):
         self.mock_applications.return_value = [
             {"id": "1", "name": "abc", "completed": False}
         ]
-        self.spark.applications = self.mock_applications
+        # pylint: disable=W0212,protected-access
+        self.spark._applications = self.mock_applications
+        # pylint: enable=W0212,protected-access
         self.assertEqual(self.spark.can_create_request(), True)
 
     def test_can_create_request_running2(self):
@@ -243,7 +291,9 @@ class SparkBackendSuite(unittest.TestCase):
             {"id": "2", "name": "abc", "completed": False},
             {"id": "2", "name": "abc", "completed": False}
         ]
-        self.spark.applications = self.mock_applications
+        # pylint: disable=W0212,protected-access
+        self.spark._applications = self.mock_applications
+        # pylint: enable=W0212,protected-access
         self.assertEqual(self.spark.can_create_request(), False)
 
     def test_validateMainClass(self):
@@ -293,11 +343,13 @@ class SparkBackendSuite(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.spark.request()
         with self.assertRaises(KeyError):
-            self.spark.request(spark_options=1, job_options=2, main_class=3)
+            self.spark.request(name=0, spark_options=1, job_options=2, main_class=3)
         with self.assertRaises(KeyError):
-            self.spark.request(spark_options=1, job_options=2, jar=4)
+            self.spark.request(name=0, spark_options=1, job_options=2, jar=4)
         with self.assertRaises(KeyError):
-            self.spark.request(spark_options=1, main_class=3, jar=4)
+            self.spark.request(name=0, spark_options=1, main_class=3, jar=4)
+        with self.assertRaises(KeyError):
+            self.spark.request(name=0, job_options=2, main_class=3, jar=4)
         with self.assertRaises(KeyError):
             self.spark.request(job_options=2, main_class=3, jar=4)
 
@@ -313,11 +365,13 @@ class SparkBackendSuite(unittest.TestCase):
         mock_util.mkdir.return_value = None
         mock_uuid4.return_value = self.mock_uuid
         # create submission request
-        res = self.spark.request(spark_options={"spark.a.b": "1"}, job_options=["a", "b", "c"],
-                                 main_class="Class", jar="a.jar")
+        res = self.spark.request(name="test", spark_options={"spark.a.b": "1"},
+                                 job_options=["a", "b", "c"], main_class="Class", jar="a.jar")
         self.assertTrue(isinstance(res, spark.SparkSubmissionRequest))
         self.assertEqual(res.spark_code, self.spark.code())
         self.assertEqual(res.spark_submit, self.spark.spark_submit)
+        self.assertEqual(res.name, "test")
+        self.assertEqual(res.master_url, "spark://master:7077")
         self.assertEqual(res.main_class, "Class")
         self.assertEqual(res.jar, "/tmp/a.jar")
         self.assertEqual(res.spark_options, {"spark.a.b": "1"})

@@ -14,18 +14,39 @@ class SparkSubmissionRequest(undersystem.SubmissionRequest):
     Spark submission request is low-level representation of Spark job with some extra handling of
     file system, and pinging job to retrieve status.
     """
-    def __init__(self, spark_code, working_directory, spark_submit, spark_options, main_class, jar,
-                 job_options):
+    def __init__(self, spark_code, working_directory, spark_submit, name, master_url, spark_options,
+                 main_class, jar, job_options):
         # interface code
         self.spark_code = spark_code
         # normalize path and check on existence, also check we have read-write access to the folder
         self.working_directory = util.readwriteDirectory(working_directory)
         # build command from options, for now just assign them
         self.spark_submit = spark_submit
+        self.name = name
+        self.master_url = master_url
         self.spark_options = spark_options
         self.main_class = main_class
         self.jar = jar
         self.job_options = job_options
+
+    def _shell(self):
+        """
+        Construct shell command to execute Spark submit, must preserve certain order of components:
+        'path/to/spark-submit', 'name', 'master-url', 'spark-options', 'main-class', 'path/to/jar',
+        'job-options', e.g. spark-submit --master spark://sandbox:7077
+        --conf "spark.driver.memory=2g" --conf "spark.executor.memory=2g" --class entrypoint jar
+        """
+        # each Spark option starts with "--conf"
+        pairs = [["--conf", "%s=%s" % (key, value)] for key, value in self.spark_options.items()]
+        command = \
+            [str(self.spark_submit)] + \
+            ["--name", str(self.name)] + \
+            ["--master", str(self.master_url)] + \
+            [conf for pair in pairs for conf in pair] + \
+            ["--class", str(self.main_class)] + \
+            [str(self.jar)] + \
+            self.job_options
+        return command
 
     def workingDirectory(self):
         """
@@ -88,7 +109,7 @@ class SparkBackend(undersystem.UnderSystemInterface):
         else:
             return "spark-submit"
 
-    def applications(self, uri):
+    def _applications(self, uri):
         """
         Fetch applications for Spark REST url. This method returns list of dict object, each of
         them contains "id", "name", and "completed" status of a job. If URL is invalid or Spark
@@ -146,7 +167,7 @@ class SparkBackend(undersystem.UnderSystemInterface):
 
         :return: True if Spark can submit job, False otherwise
         """
-        apps = self.applications(self.rest_url)
+        apps = self._applications(self.rest_url)
         if apps is None:
             return False
         running = [x for x in apps if not x["completed"]]
@@ -160,7 +181,7 @@ class SparkBackend(undersystem.UnderSystemInterface):
 
         :return: status as one of SYSTEM_AVAILABLE, SYSTEM_BUSY, SYSTEM_UNAVAILABLE
         """
-        apps = self.applications(self.rest_url)
+        apps = self._applications(self.rest_url)
         if apps is None:
             return const.SYSTEM_UNAVAILABLE
         running = [x for x in apps if not x["completed"]]
@@ -173,6 +194,7 @@ class SparkBackend(undersystem.UnderSystemInterface):
         object like this as kwargs:
         ```
         {
+            "name": "Spark job name",
             "spark_options": {
                 "spark.sql.shuffle.partitions": "200",
                 "spark.driver.memory": "10g",
@@ -189,6 +211,8 @@ class SparkBackend(undersystem.UnderSystemInterface):
         :return: Spark submission request
         """
         # Keys to search in kwargs:
+        # - spark job name
+        name = None
         # - spark options in format {"spark.x.y": "z"}
         spark_options = None
         # - job options as list of strings ["a", "b", "c"]
@@ -199,15 +223,18 @@ class SparkBackend(undersystem.UnderSystemInterface):
         jar = None
 
         # Check that dictionary has expected options set
+        if "name" not in kwargs:
+            raise KeyError("Spark job name key is not specified in %s" % kwargs)
         if "spark_options" not in kwargs:
-            raise KeyError("Spark options key are not specified")
+            raise KeyError("Spark options key are not specified in %s" % kwargs)
         if "job_options" not in kwargs:
-            raise KeyError("Job options key are not specified")
+            raise KeyError("Job options key are not specified in %s" % kwargs)
         if "main_class" not in kwargs:
-            raise KeyError("Main class key is not specified")
+            raise KeyError("Main class key is not specified %s" % kwargs)
         if "jar" not in kwargs:
-            raise KeyError("Jar key is not specified")
+            raise KeyError("Jar key is not specified %s" % kwargs)
 
+        name = str(kwargs["name"]).strip()
         spark_options = self.validateSparkOptions(kwargs["spark_options"])
         job_options = self.validateJobOptions(kwargs["job_options"])
         main_class = self.validateMainClass(kwargs["main_class"])
@@ -218,8 +245,9 @@ class SparkBackend(undersystem.UnderSystemInterface):
         req_dir = util.concat(self.working_directory, directory_suffix)
         # we assume that request directory does not exist, otherwise it will raise OSError
         util.mkdir(req_dir, 0774)
-        return SparkSubmissionRequest(self.code(), req_dir, self.spark_submit, spark_options,
-                                      main_class, jar, job_options)
+        return SparkSubmissionRequest(self.code(), req_dir, self.spark_submit, name,
+                                      self.master_url.url, spark_options, main_class, jar,
+                                      job_options)
 
     @staticmethod
     def validateSparkOptions(value):
