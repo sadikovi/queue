@@ -14,12 +14,14 @@ class SparkSubmissionRequest(undersystem.SubmissionRequest):
     Spark submission request is low-level representation of Spark job with some extra handling of
     file system, and pinging job to retrieve status.
     """
-    def __init__(self, spark_code, working_directory, spark_options, main_class, jar, job_options):
+    def __init__(self, spark_code, working_directory, spark_submit, spark_options, main_class, jar,
+                 job_options):
         # interface code
         self.spark_code = spark_code
         # normalize path and check on existence, also check we have read-write access to the folder
         self.working_directory = util.readwriteDirectory(working_directory)
-        # build command from options, currently just assign them
+        # build command from options, for now just assign them
+        self.spark_submit = spark_submit
         self.spark_options = spark_options
         self.main_class = main_class
         self.jar = jar
@@ -55,7 +57,7 @@ class SparkBackend(undersystem.UnderSystemInterface):
     Spark Backend as implementation of UnderSystemInterface. Provides access to check status and
     whether or not job can be submitted.
     """
-    def __init__(self, master_url, rest_url, num_slots, working_directory):
+    def __init__(self, master_url, rest_url, num_slots, working_directory, spark_home=None):
         """
         Create instance of Spark backend.
 
@@ -63,6 +65,7 @@ class SparkBackend(undersystem.UnderSystemInterface):
         :param rest_url: Spark UI (REST) URL, normally it is http://localhost:8080
         :param num_slots: number of slots available for submission, i.e. number of concurrent jobs
         :param working_directory: working directory root, each job has a subdirectory under root
+        :param spark_home: SPARK_HOME directory if provided, defaults to None
         """
         self.master_url = util.URI(master_url)
         if self.master_url.scheme != "spark":
@@ -70,6 +73,20 @@ class SparkBackend(undersystem.UnderSystemInterface):
         self.rest_url = util.URI(rest_url, "Spark UI")
         self.num_slots = int(num_slots)
         self.working_directory = util.readwriteDirectory(working_directory)
+        self.spark_home = util.readonlyDirectory(spark_home) if spark_home else None
+
+    @property
+    def spark_submit(self):
+        """
+        Return resolved spark-submit link. If `spark_home` is defined, we reconstruct path to the
+        actual executable, otherwise we assume that `spark-submit` is globally available.
+
+        :return: path to executable 'spark-submit' or globally defined script path
+        """
+        if self.spark_home:
+            return util.concat(self.spark_home, "bin", "spark-submit")
+        else:
+            return "spark-submit"
 
     def applications(self, uri):
         """
@@ -173,9 +190,9 @@ class SparkBackend(undersystem.UnderSystemInterface):
         """
         # Keys to search in kwargs:
         # - spark options in format {"spark.x.y": "z"}
-        spark_opts = None
+        spark_options = None
         # - job options as list of strings ["a", "b", "c"]
-        job_opts = None
+        job_options = None
         # - fully qualified main class name including package
         main_class = None
         # - path to the jar file, must exist and have read access
@@ -191,18 +208,18 @@ class SparkBackend(undersystem.UnderSystemInterface):
         if "jar" not in kwargs:
             raise KeyError("Jar key is not specified")
 
-        spark_opts = self.validateSparkOptions(kwargs["spark_options"])
-        job_opts = self.validateJobOptions(kwargs["job_options"])
+        spark_options = self.validateSparkOptions(kwargs["spark_options"])
+        job_options = self.validateJobOptions(kwargs["job_options"])
         main_class = self.validateMainClass(kwargs["main_class"])
         jar = util.readonlyFile(kwargs["jar"])
 
         # generate unique directory for submission request
         directory_suffix = uuid.uuid4().hex
         req_dir = util.concat(self.working_directory, directory_suffix)
-        print req_dir
         # we assume that request directory does not exist, otherwise it will raise OSError
         util.mkdir(req_dir, 0774)
-        return SparkSubmissionRequest(self.code(), req_dir, spark_opts, main_class, jar, job_opts)
+        return SparkSubmissionRequest(self.code(), req_dir, self.spark_submit, spark_options,
+                                      main_class, jar, job_options)
 
     @staticmethod
     def validateSparkOptions(value):

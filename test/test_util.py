@@ -1,47 +1,104 @@
 #!/usr/bin/env python
 
+import os
 import unittest
 import mock
 import src.util as util
 
 class UtilSuite(unittest.TestCase):
-    @mock.patch("src.util.os")
-    def test_readwriteDirectory_fail_1(self, mock_os):
-        mock_os.path.abspath.side_effect = StandardError("Test")
-        with self.assertRaises(StandardError):
-            util.readwriteDirectory(".")
 
     @mock.patch("src.util.os")
-    def test_readwriteDirectory_fail_2(self, mock_os):
+    def test_resolve_path_fail_1(self, mock_os):
+        mock_os.path.abspath.side_effect = OSError("Test")
+        with self.assertRaises(OSError):
+            # pylint: disable=W0212,protected-access
+            util._resolve_path(".", True, [os.R_OK])
+            # pylint: enable=W0212,protected-access
+
+    @mock.patch("src.util.os")
+    def test_resolve_path_fail_2(self, mock_os):
         mock_os.path.abspath.return_value = "/tmp"
-        mock_os.path.realpath.side_effect = StandardError("Test")
-        with self.assertRaises(StandardError):
-            util.readwriteDirectory(".")
+        mock_os.path.realpath.side_effect = OSError("Test")
+        with self.assertRaises(OSError):
+            # pylint: disable=W0212,protected-access
+            util._resolve_path(".", True, [os.R_OK])
+            # pylint: enable=W0212,protected-access
 
     @mock.patch("src.util.os")
-    def test_readwriteDirectory_fail_3(self, mock_os):
+    def test_resolve_path_fail_3(self, mock_os):
         mock_os.path.abspath.return_value = "/tmp"
         mock_os.path.realpath.return_value = "/tmp"
         mock_os.path.isdir.return_value = False
-        with self.assertRaises(StandardError):
-            util.readwriteDirectory(".")
+        with self.assertRaises(OSError):
+            # pylint: disable=W0212,protected-access
+            util._resolve_path(".", dir_expected=True, permissions=[])
+            # pylint: enable=W0212,protected-access
 
     @mock.patch("src.util.os")
-    def test_readwriteDirectory_fail_4(self, mock_os):
+    def test_resolve_path_fail_4(self, mock_os):
+        mock_os.path.abspath.return_value = "/tmp"
+        mock_os.path.realpath.return_value = "/tmp"
+        mock_os.path.isfile.return_value = False
+        with self.assertRaises(OSError):
+            # pylint: disable=W0212,protected-access
+            util._resolve_path(".", dir_expected=False, permissions=[])
+            # pylint: enable=W0212,protected-access
+
+    @mock.patch("src.util.os")
+    def test_resolve_path_fail_5(self, mock_os):
         mock_os.path.abspath.return_value = "/tmp"
         mock_os.path.realpath.return_value = "/tmp"
         mock_os.path.isdir.return_value = True
         mock_os.access.return_value = False
-        with self.assertRaises(StandardError):
-            util.readwriteDirectory(".")
+        with self.assertRaises(OSError):
+            # pylint: disable=W0212,protected-access
+            util._resolve_path(".", dir_expected=True, permissions=[os.R_OK])
+            # pylint: enable=W0212,protected-access
 
     @mock.patch("src.util.os")
-    def test_readwriteDirectory_success(self, mock_os):
+    def test_resolve_path_empty_permissions(self, mock_os):
         mock_os.path.abspath.return_value = "/tmp/a"
         mock_os.path.realpath.return_value = "/tmp/a/b"
         mock_os.path.isdir.return_value = True
-        mock_os.access.return_value = True
-        self.assertEqual(util.readwriteDirectory("."), "/tmp/a/b")
+        # pylint: disable=W0212,protected-access
+        path = util._resolve_path(".", dir_expected=True, permissions=[])
+        # pylint: enable=W0212,protected-access
+        self.assertEqual(path, "/tmp/a/b")
+
+    @mock.patch("src.util.os")
+    def test_resolve_path_permissions(self, mock_os):
+        mock_os.path.abspath.return_value = "/tmp/a"
+        mock_os.path.realpath.return_value = "/tmp/a/b"
+        mock_os.path.isdir.return_value = True
+        mock_os.path.access.return_value = True
+        # pylint: disable=W0212,protected-access
+        path = util._resolve_path(".", dir_expected=True, permissions=[os.R_OK, os.W_OK])
+        # pylint: enable=W0212,protected-access
+        self.assertEqual(path, "/tmp/a/b")
+
+    @mock.patch("src.util._resolve_path")
+    def test_readwriteDirectory(self, mock_resolve_path):
+        mock_resolve_path.return_value = "/tmp"
+        self.assertEqual(util.readwriteDirectory("."), "/tmp")
+        # pylint: disable=W0212,protected-access
+        mock_resolve_path.assert_called_with(".", True, [os.R_OK, os.W_OK])
+        # pylint: enable=W0212,protected-access
+
+    @mock.patch("src.util._resolve_path")
+    def test_readonlyDirectory(self, mock_resolve_path):
+        mock_resolve_path.return_value = "/tmp"
+        self.assertEqual(util.readonlyDirectory("."), "/tmp")
+        # pylint: disable=W0212,protected-access
+        mock_resolve_path.assert_called_with(".", True, [os.R_OK])
+        # pylint: enable=W0212,protected-access
+
+    @mock.patch("src.util._resolve_path")
+    def test_readonlyFile(self, mock_resolve_path):
+        mock_resolve_path.return_value = "/tmp"
+        self.assertEqual(util.readonlyFile("."), "/tmp")
+        # pylint: disable=W0212,protected-access
+        mock_resolve_path.assert_called_with(".", False, [os.R_OK])
+        # pylint: enable=W0212,protected-access
 
     def test_concat(self):
         self.assertEqual(util.concat("test"), "test")
@@ -68,31 +125,6 @@ class UtilSuite(unittest.TestCase):
         mock_os.mkdir.return_value = None
         util.mkdir("path", 0777)
         mock_os.mkdir.assert_called_with("path", 0777)
-
-    @mock.patch("src.util.os")
-    def test_readonlyFile_fail_1(self, mock_os):
-        mock_os.path.abspath.return_value = "/tmp/a"
-        mock_os.path.realpath.return_value = "/tmp/a/b"
-        mock_os.path.isfile.return_value = False
-        with self.assertRaises(OSError):
-            util.readonlyFile("path")
-
-    @mock.patch("src.util.os")
-    def test_readonlyFile_fail_2(self, mock_os):
-        mock_os.path.abspath.return_value = "/tmp/a"
-        mock_os.path.realpath.return_value = "/tmp/a/b"
-        mock_os.path.isfile.return_value = True
-        mock_os.access.return_value = False
-        with self.assertRaises(OSError):
-            util.readonlyFile("path")
-
-    @mock.patch("src.util.os")
-    def test_readonlyFile_success(self, mock_os):
-        mock_os.path.abspath.return_value = "/tmp/a"
-        mock_os.path.realpath.return_value = "/tmp/a/b"
-        mock_os.path.isfile.return_value = True
-        mock_os.access.return_value = True
-        self.assertEqual(util.readonlyFile("path"), "/tmp/a/b")
 
 class URISuite(unittest.TestCase):
     def setUp(self):

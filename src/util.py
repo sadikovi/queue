@@ -4,6 +4,30 @@ import os
 import urlparse
 
 # == OS related methods and classes ==
+def _resolve_path(unresolved_path, dir_expected, permissions):
+    """
+    Resolve absolute path for unresolved path, check that it exists and it is either directory or
+    file depending on a flag `dir_expected`, and also check that path is accessible based on list
+    of provided permissions (os.R_OK, os.W_OK, os.X_OK).
+
+    :param unresolved_path: unresolved path
+    :param dir_expected: True if path should be directory, False if path should be file
+    :param permissions: list of expected permissions, e.g. [os.R_OK, os.W_OK]
+    :return: fully resolved absolute path with checked permissions
+    """
+    normpath = os.path.realpath(os.path.abspath(unresolved_path))
+    # check if path is a valid directory or valid file
+    if dir_expected and not os.path.isdir(normpath):
+        raise OSError("Path %s is not a directory" % normpath)
+    if not dir_expected and not os.path.isfile(normpath):
+        raise OSError("Path %s is not a file" % normpath)
+    # check list of permissions on normalized path, valid permissions: os.R_OK, os.W_OK, os.X_OK
+    # see: https://docs.python.org/2/library/os.html#os.access
+    for permission in permissions:
+        if not os.access(normpath, permission):
+            raise OSError("Insufficient permissions for %s, expected %s" % (normpath, permission))
+    return normpath
+
 def readwriteDirectory(unresolved_directory):
     """
     Resolve absolute path for the unresolved directory, check that it exists and valid, and
@@ -12,12 +36,17 @@ def readwriteDirectory(unresolved_directory):
     :param unresolved_directory: unresolved directory
     :return: fully resolved absolute path as directory with read-write access
     """
-    normpath = os.path.realpath(os.path.abspath(unresolved_directory))
-    if not os.path.isdir(normpath):
-        raise OSError("Path %s is not a directory" % normpath)
-    if not os.access(normpath, os.R_OK) or not os.access(normpath, os.W_OK):
-        raise OSError("Insufficient permissions for %s, expected read-write" % normpath)
-    return normpath
+    return _resolve_path(unresolved_directory, True, [os.R_OK, os.W_OK])
+
+def readonlyDirectory(unresolved_directory):
+    """
+    Resolve absolute path for the unresolved directory, check that it exists and valid, and we have
+    read access to it.
+
+    :param unresolved_directory: unresolved directory
+    :return: fully resolved absolute path as directory with read access
+    """
+    return _resolve_path(unresolved_directory, True, [os.R_OK])
 
 def readonlyFile(unresolved_filepath):
     """
@@ -27,12 +56,7 @@ def readonlyFile(unresolved_filepath):
     :param unresolved_filepath: unresolved path to the file
     :return: fully resolved absolute path to the file with read access
     """
-    normpath = os.path.realpath(os.path.abspath(unresolved_filepath))
-    if not os.path.isfile(normpath):
-        raise OSError("Path %s is not a file path" % normpath)
-    if not os.access(normpath, os.R_OK):
-        raise OSError("Insufficient permissions for %s, expected read access" % normpath)
-    return normpath
+    return _resolve_path(unresolved_filepath, False, [os.R_OK])
 
 def concat(root, *paths):
     """
