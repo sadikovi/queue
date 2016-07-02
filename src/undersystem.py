@@ -1,86 +1,10 @@
 #!/usr/bin/env python
 
-import urlparse
+import src.const as const
 
 # Module provides means to create interface for under-system, e.g. Spark to report status,
 # availability, and submission procedure. Every backend that implements UnderSystemInterface should
 # also overwrite SubmissionRequest.
-
-class Status(object):
-    """
-    Generic status object for the system.
-    """
-    def __init__(self, name, desc):
-        """
-        Create status instance.
-
-        :param name: name of the status
-        :param desc: status description
-        """
-        self.name = name
-        self.desc = desc
-
-# == System availability ==
-# Available status, e.g. when system is operational or idle
-AVAILABLE = Status("available", "Available")
-# Busy status when system is under load, but still reachable
-BUSY = Status("busy", "Busy")
-# Unavailable status when system is unreachable because of timeout or is down
-UNAVAILABLE = Status("unavailable", "Unavailable")
-
-# == Submission status ==
-# Submission is pending, this is the initial status
-PENDING = Status("pending", "Pending")
-# Submission is finished successfully
-SUCCESS = Status("success", "Success")
-# Submission is finished with error
-FAILURE = Status("failure", "Failure")
-
-class URI(object):
-    """
-    URI class to keep information about URL and components, parses and validates components
-    """
-    def __init__(self, rawURI, alias=None):
-        uri = urlparse.urlsplit(rawURI)
-        # we expect scheme, hostname and port to be set, otherwise uri is considered invalid
-        if not uri.port or not uri.hostname or not uri.scheme:
-            raise StandardError("Invalid URI - expected host, port and scheme from %s" % rawURI)
-        self._host = uri.hostname
-        self._port = int(uri.port)
-        self._scheme = uri.scheme
-        self._netloc = uri.netloc
-        self._fragment = uri.fragment
-        self._url = uri.geturl()
-        # Alias for URL if it is too long, if None provided url is used
-        self._alias = alias
-
-    @property
-    def host(self):
-        return self._host
-
-    @property
-    def port(self):
-        return self._port
-
-    @property
-    def scheme(self):
-        return self._scheme
-
-    @property
-    def netloc(self):
-        return self._netloc
-
-    @property
-    def fragment(self):
-        return self._fragment
-
-    @property
-    def url(self):
-        return self._url
-
-    @property
-    def alias(self):
-        return self._alias if self._alias else self._url
 
 class SubmissionRequest(object):
     """
@@ -132,10 +56,9 @@ class SubmissionRequest(object):
     def ping(self):
         """
         Return status of the submission request, note that this method is called periodically to
-        refresh status of request. Can return PENDING when submission is still running, SUCCESS when
-        submission is finished successfully, and FAILURE when submission is finished with error.
+        refresh status of request. Should return one of the statuses listed in 'const' module
 
-        :return: PENDING if request is being processed, SUCCESS/FAILURE when finished
+        :return: constant instance of const.Status, which is listed in module 'const'
         """
         raise NotImplementedError()
 
@@ -164,10 +87,10 @@ class UnderSystemInterface(object):
 
     def status(self):
         """
-        Return current status of the system as one of predefined statuses AVAILABLE, BUSY,
-        UNAVAILABLE defined above.
+        Return current status of the system as one of predefined statuses SYSTEM_AVAILABLE,
+        SYSTEM_BUSY, SYSTEM_UNAVAILABLE defined in 'const' module.
 
-        :return: system status as Status class, either AVAILABLE, BUSY, or UNAVAILABLE
+        :return: system status from 'const' module
         """
         raise NotImplementedError()
 
@@ -175,7 +98,7 @@ class UnderSystemInterface(object):
         """
         Link to the system UI, if available, otherwise should return None.
 
-        :return: URI instance pointing to the system UI
+        :return: src.util.URI instance pointing to the system UI
         """
         raise NotImplementedError()
 
@@ -201,29 +124,29 @@ class UnderSystemInterface(object):
     @staticmethod
     def available():
         """
-        Optional method to provide custom message for `available` status. By default returns status
+        Optional method to provide custom message for `available` status. By default, returns status
         description.
 
         :return: custom message for availability of the system
         """
-        return AVAILABLE.desc
+        return const.SYSTEM_AVAILABLE.desc
 
     @staticmethod
     def busy():
         """
-        Optional method to provide custom message for `busy` status. By default returns status
+        Optional method to provide custom message for `busy` status. By default, returns status
         description.
 
         :return: custom message, when system is busy or processing a submission request
         """
-        return BUSY.desc
+        return const.SYSTEM_BUSY.desc
 
     @staticmethod
     def unavailable():
         """
-        Optional method to provide custom message for `unuavailable` status. By default return
+        Optional method to provide custom message for `unavailable` status. By default, returns
         status description.
 
         :return: custom message, when system is unreachable
         """
-        return UNAVAILABLE.desc
+        return const.SYSTEM_UNAVAILABLE.desc

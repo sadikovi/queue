@@ -6,6 +6,7 @@ import unittest
 
 # Select what tests to run
 RUN_TESTS = {
+    "test.test_const": True,
     "test.test_queue": True,
     "test.test_undersystem": True,
     "test.test_spark": True,

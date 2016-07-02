@@ -4,6 +4,7 @@ import os
 import unittest
 import urllib2
 import mock
+import src.const as const
 import src.spark as spark
 import src.undersystem as undersystem
 
@@ -176,26 +177,26 @@ class SparkBackendSuite(unittest.TestCase):
     def test_status_available_empty(self):
         self.mock_applications.return_value = []
         self.spark.applications = self.mock_applications
-        self.assertEqual(self.spark.status(), undersystem.AVAILABLE)
+        self.assertEqual(self.spark.status(), const.SYSTEM_AVAILABLE)
 
     def test_status_available_complete(self):
         self.mock_applications.return_value = [
             {"id": "2", "name": "abc", "completed": True}
         ]
         self.spark.applications = self.mock_applications
-        self.assertEqual(self.spark.status(), undersystem.AVAILABLE)
+        self.assertEqual(self.spark.status(), const.SYSTEM_AVAILABLE)
 
     def test_status_busy(self):
         self.mock_applications.return_value = [
             {"id": "2", "name": "abc", "completed": False}
         ]
         self.spark.applications = self.mock_applications
-        self.assertEqual(self.spark.status(), undersystem.BUSY)
+        self.assertEqual(self.spark.status(), const.SYSTEM_BUSY)
 
     def test_status_unavailable(self):
         self.mock_applications.return_value = None
         self.spark.applications = self.mock_applications
-        self.assertEqual(self.spark.status(), undersystem.UNAVAILABLE)
+        self.assertEqual(self.spark.status(), const.SYSTEM_UNAVAILABLE)
 
     def test_can_create_request_none(self):
         self.mock_applications.return_value = None

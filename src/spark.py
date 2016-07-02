@@ -2,6 +2,7 @@
 
 import json
 import urllib2
+import src.const as const
 import src.undersystem as undersystem
 import src.util as util
 
@@ -69,10 +70,10 @@ class SparkBackend(undersystem.UnderSystemInterface):
         :param num_slots: number of slots available for submission, i.e. number of concurrent jobs
         :param working_directory: working directory root, each job has a subdirectory under root
         """
-        self.master_url = undersystem.URI(master_url)
+        self.master_url = util.URI(master_url)
         if self.master_url.scheme != "spark":
             raise StandardError("Expected 'spark' scheme for url %s", self.master_url.url)
-        self.rest_url = undersystem.URI(rest_url, "Spark UI")
+        self.rest_url = util.URI(rest_url, "Spark UI")
         self.num_slots = int(num_slots)
         self.working_directory = util.readwriteDirectory(working_directory)
 
@@ -121,7 +122,8 @@ class SparkBackend(undersystem.UnderSystemInterface):
     def can_create_request(self):
         """
         Whether or not Spark can submit a job. This is valid operation, if status is either
-        AVAILABLE or BUSY, and number of slots are greater than number of running applications.
+        SYSTEM_AVAILABLE or SYSTEM_BUSY, and number of slots are greater than number of running
+        applications.
 
         :return: True if Spark can submit job, False otherwise
         """
@@ -137,13 +139,13 @@ class SparkBackend(undersystem.UnderSystemInterface):
         completed, we say that cluster is available, as nothing is running. If at least one
         application is running - cluster is busy, in any other cases - cluster is unavailable.
 
-        :return: status as one of AVAILABLE, BUSY, UNAVAILABLE
+        :return: status as one of SYSTEM_AVAILABLE, SYSTEM_BUSY, SYSTEM_UNAVAILABLE
         """
         apps = self.applications(self.rest_url)
         if apps is None:
-            return undersystem.UNAVAILABLE
+            return const.SYSTEM_UNAVAILABLE
         running = [x for x in apps if not x["completed"]]
-        return undersystem.BUSY if running else undersystem.AVAILABLE
+        return const.SYSTEM_BUSY if running else const.SYSTEM_AVAILABLE
 
     def request(self, **kwargs):
         """
