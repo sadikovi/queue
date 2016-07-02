@@ -17,7 +17,7 @@ suites = unittest.TestSuite()
 
 # Add individual test module
 def addTests(module_name):
-    if module_name in RUN_TESTS:
+    if module_name in RUN_TESTS and RUN_TESTS[module_name]:
         module = importlib.import_module(module_name)
         batch = loadSuites(module)
         suites.addTest(batch)

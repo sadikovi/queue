@@ -43,6 +43,57 @@ class UtilSuite(unittest.TestCase):
         mock_os.access.return_value = True
         self.assertEqual(util.readwriteDirectory("."), "/tmp/a/b")
 
+    def test_concat(self):
+        self.assertEqual(util.concat("test"), "test")
+        self.assertEqual(util.concat("test", "1"), "test/1")
+        self.assertEqual(util.concat("test", "1", "2"), "test/1/2")
+
+    @mock.patch("src.util.os")
+    def test_mkdir_fail_1(self, mock_os):
+        mock_os.mkdir.side_effect = OSError("Test")
+        with self.assertRaises(OSError):
+            util.mkdir("path", 0777)
+        mock_os.mkdir.assert_called_with("path", 0777)
+
+    @mock.patch("src.util.os")
+    def test_mkdir_fail_2(self, mock_os):
+        mock_os.mkdir.return_value = None
+        with self.assertRaises(ValueError):
+            util.mkdir(None, 0777)
+        with self.assertRaises(ValueError):
+            util.mkdir("path", None)
+
+    @mock.patch("src.util.os")
+    def test_mkdir_success(self, mock_os):
+        mock_os.mkdir.return_value = None
+        util.mkdir("path", 0777)
+        mock_os.mkdir.assert_called_with("path", 0777)
+
+    @mock.patch("src.util.os")
+    def test_readonlyFile_fail_1(self, mock_os):
+        mock_os.path.abspath.return_value = "/tmp/a"
+        mock_os.path.realpath.return_value = "/tmp/a/b"
+        mock_os.path.isfile.return_value = False
+        with self.assertRaises(OSError):
+            util.readonlyFile("path")
+
+    @mock.patch("src.util.os")
+    def test_readonlyFile_fail_2(self, mock_os):
+        mock_os.path.abspath.return_value = "/tmp/a"
+        mock_os.path.realpath.return_value = "/tmp/a/b"
+        mock_os.path.isfile.return_value = True
+        mock_os.access.return_value = False
+        with self.assertRaises(OSError):
+            util.readonlyFile("path")
+
+    @mock.patch("src.util.os")
+    def test_readonlyFile_success(self, mock_os):
+        mock_os.path.abspath.return_value = "/tmp/a"
+        mock_os.path.realpath.return_value = "/tmp/a/b"
+        mock_os.path.isfile.return_value = True
+        mock_os.access.return_value = True
+        self.assertEqual(util.readonlyFile("path"), "/tmp/a/b")
+
 class URISuite(unittest.TestCase):
     def setUp(self):
         self.uri1 = util.URI("http://localhost:8080", "Spark UI")

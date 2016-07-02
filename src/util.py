@@ -14,10 +14,48 @@ def readwriteDirectory(unresolved_directory):
     """
     normpath = os.path.realpath(os.path.abspath(unresolved_directory))
     if not os.path.isdir(normpath):
-        raise StandardError("Path %s is not a directory" % normpath)
+        raise OSError("Path %s is not a directory" % normpath)
     if not os.access(normpath, os.R_OK) or not os.access(normpath, os.W_OK):
-        raise StandardError("Insufficient permissions for %s, expected read-write" % normpath)
+        raise OSError("Insufficient permissions for %s, expected read-write" % normpath)
     return normpath
+
+def readonlyFile(unresolved_filepath):
+    """
+    Resolve absolute path for the unresolved filepath, check that path exists and valid, and read
+    access is granted.
+
+    :param unresolved_filepath: unresolved path to the file
+    :return: fully resolved absolute path to the file with read access
+    """
+    normpath = os.path.realpath(os.path.abspath(unresolved_filepath))
+    if not os.path.isfile(normpath):
+        raise OSError("Path %s is not a file path" % normpath)
+    if not os.access(normpath, os.R_OK):
+        raise OSError("Insufficient permissions for %s, expected read access" % normpath)
+    return normpath
+
+def concat(root, *paths):
+    """
+    Shortcut for `os.path.join()` method.
+
+    :param root: main part of path
+    :param *paths: suffices to append to the root
+    :return: concatenated path
+    """
+    return os.path.join(root, *paths)
+
+def mkdir(path, mode):
+    """
+    Shortcut for `os.mkdir()` method.
+
+    :param path: path to create
+    :param mode: permissions octal value
+    """
+    if not path:
+        raise ValueError("Invalid path %s is provided" % path)
+    if not mode:
+        raise ValueError("Invalid mode %s is provided" % mode)
+    os.mkdir(path, mode)
 
 # == REST API and URI related methods and classes ===
 class URI(object):

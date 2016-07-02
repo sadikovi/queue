@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 
 import json
+import re
+import types
 import urllib2
+import uuid
 import src.const as const
 import src.undersystem as undersystem
 import src.util as util
@@ -150,7 +153,7 @@ class SparkBackend(undersystem.UnderSystemInterface):
         """
         Create new SparkSubmissionRequest based on options passed. This will create unique job
         directory for submission request, parse Spark and job specific options. Backend expects
-        object like this:
+        object like this as kwargs:
         ```
         {
             "spark_options": {
@@ -168,19 +171,84 @@ class SparkBackend(undersystem.UnderSystemInterface):
         :param **kwargs: method attributes for extracting Spark options
         :return: Spark submission request
         """
+        # Keys to search in kwargs:
+        # - spark options in format {"spark.x.y": "z"}
+        spark_opts = None
+        # - job options as list of strings ["a", "b", "c"]
+        job_opts = None
+        # - fully qualified main class name including package
+        main_class = None
+        # - path to the jar file, must exist and have read access
+        jar = None
 
-        # Unique job directory as subdirectory of SparkBackend root
-        # if not isinstance(uid, types.StringType):
-        #     raise StandardError("UID is not of String type")
-        # if not uid.isalnum():
-        #     raise StandardError("UID is not alphanumeric")
-        # job_dir = os.path.join(self.working_directory, uid)
-        # Attempt to create directory on file system, this will fail if directory already exists
-        # os.mkdir(job_dir)
-        # Parse system and job options
-        # spark_options = raw_system_options
-        # job_options = raw_options
-        # Parse files to extract jar
-        # jar = files
-        # return SparkSubmissionRequest(uid, name, self, job_dir, spark_options, job_options, jar)
-        raise NotImplementedError()
+        # Check that dictionary has expected options set
+        if "spark_options" not in kwargs:
+            raise KeyError("Spark options key are not specified")
+        if "job_options" not in kwargs:
+            raise KeyError("Job options key are not specified")
+        if "main_class" not in kwargs:
+            raise KeyError("Main class key is not specified")
+        if "jar" not in kwargs:
+            raise KeyError("Jar key is not specified")
+
+        spark_opts = self.validateSparkOptions(kwargs["spark_options"])
+        job_opts = self.validateJobOptions(kwargs["job_options"])
+        main_class = self.validateMainClass(kwargs["main_class"])
+        jar = util.readonlyFile(kwargs["jar"])
+
+        # generate unique directory for submission request
+        directory_suffix = uuid.uuid4().hex
+        req_dir = util.concat(self.working_directory, directory_suffix)
+        print req_dir
+        # we assume that request directory does not exist, otherwise it will raise OSError
+        util.mkdir(req_dir, 0774)
+        return SparkSubmissionRequest(self.code(), req_dir, spark_opts, main_class, jar, job_opts)
+
+    @staticmethod
+    def validateSparkOptions(value):
+        """
+        Validate Spark options, must be a dictionary where key as a name of option, and value is
+        option's value as string. If option name does not start with "spark.", it is ignored.
+        Raises error, if value is not a dictionary; non-string value is converted into string.
+
+        :param value: raw value to process
+        :return: validated Spark options as dictionary
+        """
+        if not isinstance(value, types.DictType):
+            raise TypeError("Expected dictionary of Spark options, got '%s'" % value)
+        temp_buffer = {}
+        for maybe_key, maybe_value in value.items():
+            tkey = str(maybe_key).strip()
+            tvalue = str(maybe_value).strip()
+            if tkey.startswith("spark."):
+                temp_buffer[tkey] = tvalue
+        return temp_buffer
+
+    @staticmethod
+    def validateJobOptions(value):
+        """
+        Validate job options, must be a list of string values, though non-string values are
+        converted to strings, if type is invalid, raises error.
+
+        :param value: raw value to process
+        :return: validated job options as list of strings
+        """
+        if not isinstance(value, types.ListType):
+            raise TypeError("Expected list of job options, got '%s'" % value)
+        return [str(x) for x in value]
+
+    @staticmethod
+    def validateMainClass(value):
+        """
+        Validate main class syntax, must have "." separated word boundaries. Raises error if name
+        does not confirm to pattern or is None.
+
+        :param value: raw value to process
+        :return: validated main class name
+        """
+        if not value:
+            raise ValueError("Invalid main class as None, expected package?.Class")
+        groups = re.match(r"^(\w+)(\.\w+)*$", value.strip())
+        if not groups:
+            raise ValueError("Invalid main class syntax '%s', expected package?.Class" % value)
+        return groups.group(0)

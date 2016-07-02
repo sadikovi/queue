@@ -74,8 +74,14 @@ class SparkBackendSuite(unittest.TestCase):
         class MockResponse(object):
             def read(self):
                 return None
+        # Mock response for uuid.uuid4()
+        class MockUUID(object):
+            @property
+            def hex(self):
+                return "abcdef123456"
         self.spark = spark.SparkBackend("spark://sandbox:7077", "http://localhost:8080", 3, ".")
         self.mock_response = MockResponse()
+        self.mock_uuid = MockUUID()
         self.mock_applications = mock.Mock()
 
     def test_init_wrong_slots(self):
@@ -116,10 +122,6 @@ class SparkBackendSuite(unittest.TestCase):
     def test_link(self):
         self.assertEqual(self.spark.link().alias, "Spark UI")
         self.assertEqual(self.spark.link().url, "http://localhost:8080")
-
-    def test_request(self):
-        with self.assertRaises(NotImplementedError):
-            self.spark.request()
 
     @mock.patch("src.spark.urllib2")
     def test_applications_fail_request(self, mock_urllib2):
@@ -228,6 +230,87 @@ class SparkBackendSuite(unittest.TestCase):
         ]
         self.spark.applications = self.mock_applications
         self.assertEqual(self.spark.can_create_request(), False)
+
+    def test_validateMainClass(self):
+        valid_names = ["Class", "com.Class", "com.github.Class", "Main1Class", "1.2.Class"]
+        invalid_names = [None, "invalid-class", "invalid..class", ".invalid.class", "InvalidClass."]
+        for name in valid_names:
+            self.assertEqual(self.spark.validateMainClass(name), name)
+        for name in invalid_names:
+            with self.assertRaises(ValueError):
+                self.spark.validateMainClass(name)
+
+    def test_validateJobOptions(self):
+        # test non-list values
+        with self.assertRaises(TypeError):
+            self.spark.validateJobOptions({"a": 1})
+        with self.assertRaises(TypeError):
+            self.spark.validateJobOptions(None)
+        with self.assertRaises(TypeError):
+            self.spark.validateJobOptions("str")
+        with self.assertRaises(TypeError):
+            self.spark.validateJobOptions(1)
+        # test valid list with mixed values
+        raw = [1, True, "str"]
+        expected = ["1", "True", "str"]
+        self.assertEqual(self.spark.validateJobOptions(raw), expected)
+        # test empty list
+        self.assertEqual(self.spark.validateJobOptions([]), [])
+
+    def test_validateSparkOptions(self):
+        # test non-dict values
+        with self.assertRaises(TypeError):
+            self.spark.validateSparkOptions(["a", 1])
+        with self.assertRaises(TypeError):
+            self.spark.validateSparkOptions(None)
+        with self.assertRaises(TypeError):
+            self.spark.validateSparkOptions("str")
+        with self.assertRaises(TypeError):
+            self.spark.validateSparkOptions(1)
+        # test valid dictionary with mixed values
+        raw = {"spark.a.x": "1", "spark.a.y": True, "spark.a.z": 2, "a.b": "3"}
+        expected = {"spark.a.x": "1", "spark.a.y": "True", "spark.a.z": "2"}
+        self.assertEqual(self.spark.validateSparkOptions(raw), expected)
+        # test empty dictionary
+        self.assertEqual(self.spark.validateSparkOptions({}), {})
+
+    def test_request_wrong_keys(self):
+        with self.assertRaises(KeyError):
+            self.spark.request()
+        with self.assertRaises(KeyError):
+            self.spark.request(spark_options=1, job_options=2, main_class=3)
+        with self.assertRaises(KeyError):
+            self.spark.request(spark_options=1, job_options=2, jar=4)
+        with self.assertRaises(KeyError):
+            self.spark.request(spark_options=1, main_class=3, jar=4)
+        with self.assertRaises(KeyError):
+            self.spark.request(job_options=2, main_class=3, jar=4)
+
+    @mock.patch("src.spark.uuid.uuid4")
+    @mock.patch("src.spark.util")
+    def test_request(self, mock_util, mock_uuid4):
+        # submission request expected directory
+        req_dir = self.spark.working_directory + "/" + self.mock_uuid.hex
+        # mock of utils and libs
+        mock_util.readonlyFile.return_value = "/tmp/a.jar"
+        mock_util.readwriteDirectory.return_value = req_dir
+        mock_util.concat.return_value = req_dir
+        mock_util.mkdir.return_value = None
+        mock_uuid4.return_value = self.mock_uuid
+        # create submission request
+        res = self.spark.request(spark_options={"spark.a.b": "1"}, job_options=["a", "b", "c"],
+                                 main_class="Class", jar="a.jar")
+        self.assertTrue(isinstance(res, spark.SparkSubmissionRequest))
+        self.assertEqual(res.spark_code, self.spark.code())
+        self.assertEqual(res.main_class, "Class")
+        self.assertEqual(res.jar, "/tmp/a.jar")
+        self.assertEqual(res.spark_options, {"spark.a.b": "1"})
+        self.assertEqual(res.job_options, ["a", "b", "c"])
+        self.assertEqual(res.working_directory, req_dir)
+        mock_util.readonlyFile.assert_called_with("a.jar")
+        mock_util.concat.assert_called_with(self.spark.working_directory, self.mock_uuid.hex)
+        mock_util.mkdir.assert_called_with(req_dir, 0774)
+        mock_util.readwriteDirectory.assert_called_with(req_dir)
 
 # Load test suites
 def suites():
