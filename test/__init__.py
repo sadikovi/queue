@@ -6,7 +6,10 @@ import unittest
 
 # Select what tests to run
 RUN_TESTS = {
-    "test.test_queue": True
+    "test.test_queue": True,
+    "test.test_undersystem": True,
+    "test.test_spark": True,
+    "test.test_util": True
 }
 
 suites = unittest.TestSuite()
