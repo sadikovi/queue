@@ -6,11 +6,10 @@ import urllib2
 import mock
 import src.const as const
 import src.spark as spark
-import src.undersystem as undersystem
 
 class SparkSubmissionRequestSuite(unittest.TestCase):
     def setUp(self):
-        self.req = spark.SparkSubmissionRequest("uid", "name", None, ".", [], [], "jar")
+        self.req = spark.SparkSubmissionRequest("SPARK", ".", {"a": 1}, "class", "jar", ["a", "b"])
 
     @mock.patch("src.util.os")
     def test_init(self, mock_os):
@@ -20,22 +19,24 @@ class SparkSubmissionRequestSuite(unittest.TestCase):
         mock_os.path.isdir.return_value = True
         mock_os.access.return_value = True
 
-        req = spark.SparkSubmissionRequest("uid", "name", None, working_dir, [], [], "jar")
-        self.assertEqual(req.uid, "uid")
-        self.assertEqual(req.name, "name")
-        self.assertEqual(req.spark_backend, None)
+        req = spark.SparkSubmissionRequest("SPARK", ".", {"a": 1}, "class", "jar", ["a", "b"])
+        self.assertEqual(req.spark_code, "SPARK")
         self.assertEqual(req.working_directory, working_dir)
+        self.assertEqual(req.spark_options, {"a": 1})
+        self.assertEqual(req.main_class, "class")
+        self.assertEqual(req.jar, "jar")
+        self.assertEqual(req.job_options, ["a", "b"])
 
     def test_init_none_dir(self):
         with self.assertRaises(StandardError):
-            spark.SparkSubmissionRequest("uid", "name", None, None, [], [], "jar")
+            spark.SparkSubmissionRequest("SPARK", None, {"a": 1}, "class", "jar", ["a", "b"])
 
     @mock.patch("src.util.os")
     def test_init_nonexistent_dir(self, mock_os):
         mock_os.path.isdir.return_value = False
 
         try:
-            spark.SparkSubmissionRequest("uid", "name", None, "nonexistent path", [], [], "jar")
+            spark.SparkSubmissionRequest("SPARK", "nonexistent path", {}, "class", "jar", [])
         except StandardError as err:
             self.assertTrue("not a directory" in str(err))
 
@@ -45,17 +46,15 @@ class SparkSubmissionRequestSuite(unittest.TestCase):
         mock_os.access.return_value = False
 
         try:
-            spark.SparkSubmissionRequest("uid", "name", None, "readonly path", [], [], "jar")
+            spark.SparkSubmissionRequest("SPARK", "dir", {"a": 1}, "class", "jar", ["a", "b"])
         except StandardError as err:
             self.assertTrue("Insufficient permissions" in str(err))
 
     def test_working_directory(self):
         self.assertEqual(self.req.workingDirectory(), os.path.abspath("."))
 
-    def test_interface(self):
-        self.assertEqual(self.req.interface(), None)
-        req = spark.SparkSubmissionRequest("uid", "name", "spark", ".", [], [], "jar")
-        self.assertEqual(req.interface(), "spark")
+    def test_interfaceCode(self):
+        self.assertEqual(self.req.interfaceCode(), "SPARK")
 
     def test_dispatch(self):
         with self.assertRaises(NotImplementedError):
@@ -110,6 +109,9 @@ class SparkBackendSuite(unittest.TestCase):
 
     def test_name(self):
         self.assertEqual(self.spark.name(), "Spark cluster")
+
+    def test_code(self):
+        self.assertEqual(self.spark.code(), "SPARK")
 
     def test_link(self):
         self.assertEqual(self.spark.link().alias, "Spark UI")

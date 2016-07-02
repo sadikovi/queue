@@ -11,25 +11,16 @@ class SparkSubmissionRequest(undersystem.SubmissionRequest):
     Spark submission request is low-level representation of Spark job with some extra handling of
     file system, and pinging job to retrieve status.
     """
-    def __init__(self, uid, name, backend, working_directory, spark_options, job_options, jar):
-        self._uid = uid
-        self.name = name
-        self.spark_backend = backend
+    def __init__(self, spark_code, working_directory, spark_options, main_class, jar, job_options):
+        # interface code
+        self.spark_code = spark_code
         # normalize path and check on existence, also check we have read-write access to the folder
         self.working_directory = util.readwriteDirectory(working_directory)
         # build command from options, currently just assign them
         self.spark_options = spark_options
-        self.job_options = job_options
+        self.main_class = main_class
         self.jar = jar
-
-    @property
-    def uid(self):
-        """
-        Unique identifier for Spark submission request.
-
-        :return: Spark submission request uid
-        """
-        return self._uid
+        self.job_options = job_options
 
     def workingDirectory(self):
         """
@@ -39,13 +30,13 @@ class SparkSubmissionRequest(undersystem.SubmissionRequest):
         """
         return self.working_directory
 
-    def interface(self):
+    def interfaceCode(self):
         """
-        Reference to the backend that was used to create submission request.
+        Spark backend's unique identifier.
 
-        :return: SparkBackend instance
+        :return: SparkBackend code
         """
-        return self.spark_backend
+        return self.spark_code
 
     def dispatch(self):
         raise NotImplementedError()
@@ -111,6 +102,14 @@ class SparkBackend(undersystem.UnderSystemInterface):
         """
         return "Spark cluster"
 
+    def code(self):
+        """
+        Code identifier for Spark backend.
+
+        :return: Spark unique identifier
+        """
+        return "SPARK"
+
     def link(self):
         """
         Return link for Spark UI.
@@ -150,11 +149,26 @@ class SparkBackend(undersystem.UnderSystemInterface):
     def request(self, **kwargs):
         """
         Create new SparkSubmissionRequest based on options passed. This will create unique job
-        directory for submission request, parse Spark and job specific options.
+        directory for submission request, parse Spark and job specific options. Backend expects
+        object like this:
+        ```
+        {
+            "spark_options": {
+                "spark.sql.shuffle.partitions": "200",
+                "spark.driver.memory": "10g",
+                "spark.executor.memory": "10g"
+                ...
+            },
+            "job_options": ["a", "b", "c", ...],
+            "main_class": "com.github.sadikovi.Test",
+            "jar": "/path/to/jar/file"
+        }
+        ```
 
         :param **kwargs: method attributes for extracting Spark options
         :return: Spark submission request
         """
+
         # Unique job directory as subdirectory of SparkBackend root
         # if not isinstance(uid, types.StringType):
         #     raise StandardError("UID is not of String type")

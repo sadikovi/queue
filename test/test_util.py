@@ -52,15 +52,15 @@ class URISuite(unittest.TestCase):
         uri = util.URI("http://localhost:8080")
         self.assertNotEqual(uri, None)
 
-    def test_invalidScheme(self):
+    def test_invalid_scheme(self):
         with self.assertRaises(StandardError):
             util.URI("localhost:8080")
 
-    def test_invalidHost(self):
+    def test_invalid_host(self):
         with self.assertRaises(StandardError):
             util.URI("http://:8080")
 
-    def test_invalidPort(self):
+    def test_invalid_port(self):
         with self.assertRaises(StandardError):
             util.URI("http://localhost")
         with self.assertRaises(ValueError):

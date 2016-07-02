@@ -19,19 +19,17 @@ class SubmissionRequestSuite(unittest.TestCase):
         with self.assertRaises(StandardError):
             us.SubmissionRequest()
 
-    def test_uid(self):
+    def test_interfaceCode(self):
         with self.assertRaises(NotImplementedError):
-            # pylint: disable=W0104
-            self.request_submit.uid
-            # pylint: enable=W0104
-
-    def test_dispatch(self):
-        with self.assertRaises(NotImplementedError):
-            self.request_submit.dispatch()
+            self.request_submit.interfaceCode()
 
     def test_workingDirectory(self):
         with self.assertRaises(NotImplementedError):
             self.request_submit.workingDirectory()
+
+    def test_dispatch(self):
+        with self.assertRaises(NotImplementedError):
+            self.request_submit.dispatch()
 
     def test_ping(self):
         with self.assertRaises(NotImplementedError):
@@ -40,10 +38,6 @@ class SubmissionRequestSuite(unittest.TestCase):
     def test_close(self):
         with self.assertRaises(NotImplementedError):
             self.request_submit.close()
-
-    def test_interface(self):
-        with self.assertRaises(NotImplementedError):
-            self.request_submit.interface()
 
 # Dummy system interface
 # pylint: disable=W0223,W0231
@@ -63,6 +57,10 @@ class UnderSystemInterfaceSuite(unittest.TestCase):
     def test_name(self):
         with self.assertRaises(NotImplementedError):
             self.testus.name()
+
+    def test_code(self):
+        with self.assertRaises(NotImplementedError):
+            self.testus.code()
 
     def test_status(self):
         with self.assertRaises(NotImplementedError):

@@ -15,21 +15,12 @@ class SubmissionRequest(object):
     def __init__(self):
         raise StandardError("Cannot be instantiated")
 
-    @property
-    def uid(self):
+    def interfaceCode(self):
         """
-        Unique identifier for submission request, must be globally unique.
+        Unique identifier of the interface that was used to create submission request, is assigned
+        value of `UnderSystemInterface.code()`.
 
-        :return: submission request uid
-        """
-        raise NotImplementedError()
-
-    def interface(self):
-        """
-        Return pointer to interface that was used to create instance. Note that interface is always
-        created once per application.
-
-        :return: instance of UnderSystemInterface
+        :return: unique system identifier (code)
         """
         raise NotImplementedError()
 
@@ -82,6 +73,15 @@ class UnderSystemInterface(object):
         Return custom name of the service, should be fairly short.
 
         :return: system name as string
+        """
+        raise NotImplementedError()
+
+    def code(self):
+        """
+        Return code for the service, e.g. SPARK, that is unique to a service. Must be less than 10
+        characters.
+
+        :return: code name/identifier for the service
         """
         raise NotImplementedError()
 
