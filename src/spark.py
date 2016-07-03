@@ -190,10 +190,11 @@ class SparkBackend(undersystem.UnderSystemInterface):
     def request(self, **kwargs):
         """
         Create new SparkSubmissionRequest based on options passed. This will create unique job
-        directory for submission request, parse Spark and job specific options. Backend expects
-        object like this as kwargs:
+        directory for submission request or parse existing one, if available, parse Spark and job
+        specific options. Backend expects object like this as kwargs:
         ```
         {
+            "working_directory": "/tmp/work/123",
             "name": "Spark job name",
             "spark_options": {
                 "spark.sql.shuffle.partitions": "200",
@@ -206,6 +207,8 @@ class SparkBackend(undersystem.UnderSystemInterface):
             "jar": "/path/to/jar/file"
         }
         ```
+        Note that `working_directory` is optional, and if not provided we create it using Spark
+        backend working directory.
 
         :param **kwargs: method attributes for extracting Spark options
         :return: Spark submission request
@@ -221,6 +224,8 @@ class SparkBackend(undersystem.UnderSystemInterface):
         main_class = None
         # - path to the jar file, must exist and have read access
         jar = None
+        # - optional working directory, in case it is not specified, we create it
+        working_directory = None
 
         # Check that dictionary has expected options set
         if "name" not in kwargs:
@@ -239,13 +244,15 @@ class SparkBackend(undersystem.UnderSystemInterface):
         job_options = self.validateJobOptions(kwargs["job_options"])
         main_class = self.validateMainClass(kwargs["main_class"])
         jar = util.readonlyFile(kwargs["jar"])
-
-        # generate unique directory for submission request
-        directory_suffix = uuid.uuid4().hex
-        req_dir = util.concat(self.working_directory, directory_suffix)
-        # we assume that request directory does not exist, otherwise it will raise OSError
-        util.mkdir(req_dir, 0774)
-        return SparkSubmissionRequest(self.code(), req_dir, self.spark_submit, name,
+        if "working_directory" in kwargs:
+            working_directory = kwargs["working_directory"]
+        else:
+            # generate unique directory for submission request
+            directory_suffix = uuid.uuid4().hex
+            working_directory = util.concat(self.working_directory, directory_suffix)
+            # we assume that request directory does not exist, otherwise it will raise OSError
+            util.mkdir(working_directory, 0774)
+        return SparkSubmissionRequest(self.code(), working_directory, self.spark_submit, name,
                                       self.master_url.url, spark_options, main_class, jar,
                                       job_options)
 

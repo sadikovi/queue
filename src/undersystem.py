@@ -104,8 +104,10 @@ class UnderSystemInterface(object):
 
     def request(self, **kwargs):
         """
-        Create new submission request for the system. It should raise an error, if request cannot
-        be created, or return a valid instance of SubmissionRequest.
+        Create new submission request for the system or reconstruct old submission request from
+        database payload data. It should raise an error, if request cannot be created, or return a
+        valid instance of SubmissionRequest. Note that this applies for creating new request, or
+        reconstructing request that has been saved as part of scheduler.
 
         :param **kwargs: different options to construct submission request
         :return: instance of SubmissionRequest

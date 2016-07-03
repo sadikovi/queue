@@ -367,6 +367,7 @@ class SparkBackendSuite(unittest.TestCase):
         # create submission request
         res = self.spark.request(name="test", spark_options={"spark.a.b": "1"},
                                  job_options=["a", "b", "c"], main_class="Class", jar="a.jar")
+        # assertions
         self.assertTrue(isinstance(res, spark.SparkSubmissionRequest))
         self.assertEqual(res.spark_code, self.spark.code())
         self.assertEqual(res.spark_submit, self.spark.spark_submit)
@@ -381,6 +382,26 @@ class SparkBackendSuite(unittest.TestCase):
         mock_util.concat.assert_called_with(self.spark.working_directory, self.mock_uuid.hex)
         mock_util.mkdir.assert_called_with(req_dir, 0774)
         mock_util.readwriteDirectory.assert_called_with(req_dir)
+
+    @mock.patch("src.spark.util")
+    def test_request_with_work_dir(self, mock_util):
+        # mock of utils and libs
+        mock_util.readonlyFile.return_value = "/tmp/a.jar"
+        mock_util.readwriteDirectory.return_value = "/provided-working-directory"
+        res = self.spark.request(working_directory="/provided-working-directory", name="test",
+                                 spark_options={"spark.a.b": "1"}, job_options=["a", "b", "c"],
+                                 main_class="Class", jar="a.jar")
+        # assertions
+        self.assertTrue(isinstance(res, spark.SparkSubmissionRequest))
+        self.assertEqual(res.spark_code, self.spark.code())
+        self.assertEqual(res.name, "test")
+        self.assertEqual(res.master_url, "spark://master:7077")
+        self.assertEqual(res.main_class, "Class")
+        self.assertEqual(res.jar, "/tmp/a.jar")
+        self.assertEqual(res.spark_options, {"spark.a.b": "1"})
+        self.assertEqual(res.job_options, ["a", "b", "c"])
+        self.assertEqual(res.working_directory, "/provided-working-directory")
+        mock_util.readwriteDirectory.assert_called_with("/provided-working-directory")
 
 # Load test suites
 def suites():
