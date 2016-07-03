@@ -35,6 +35,8 @@ class SparkSubmissionRequest(undersystem.SubmissionRequest):
         'path/to/spark-submit', 'name', 'master-url', 'spark-options', 'main-class', 'path/to/jar',
         'job-options', e.g. spark-submit --master spark://sandbox:7077
         --conf "spark.driver.memory=2g" --conf "spark.executor.memory=2g" --class entrypoint jar
+
+        :return: shell command to execute as a list of arguments
         """
         # each Spark option starts with "--conf"
         pairs = [["--conf", "%s=%s" % (key, value)] for key, value in self.spark_options.items()]
