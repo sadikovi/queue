@@ -28,6 +28,7 @@ class Message(object):
 MESSAGE_SHUTDOWN = "SHUTDOWN"
 MESSAGE_TASK_STARTED = "MESSAGE_TASK_STARTED"
 MESSAGE_TASK_FINISHED = "MESSAGE_TASK_FINISHED"
+MESSAGE_TASK_KILLED = "MESSAGE_TASK_KILLED"
 
 class TerminationException(Exception):
     """
@@ -66,6 +67,8 @@ class Executor(multiprocessing.Process):
             self.logger = self._get_default_logger(log_name)
         # we also keep reference to active task, this will be reassigned for every iteration
         self.active_task = None
+        # flag to indicate if executor is terminated
+        self._terminated = False
         super(Executor, self).__init__()
 
     def _get_default_logger(self, name):
@@ -87,11 +90,16 @@ class Executor(multiprocessing.Process):
     def iteration(self):
         """
         Run single iteration, entire logic of executor should be specified in this method, unless
-        there is an additional logic between iterations.
+        there is an additional logic between iterations. Iteration is cancelled, if executor is
+        terminated.
 
         :return: boolean flag, True - run next iteration, False - terminate
         """
-        self.logger.info("Run iteration for %s, timeout=%s", self.name, self.timeout)
+        # we process special case of terminated executor in case someone would launch it again.
+        if self._terminated:
+            self.logger.warning("Executor has been terminated, iteration is cancelled")
+            return False
+        self.logger.debug("Run iteration for %s, timeout=%s", self.name, self.timeout)
         try:
             # check if there are any messages in connection
             if self.conn.poll():
@@ -100,6 +108,10 @@ class Executor(multiprocessing.Process):
             self._process_task()
         except TerminationException:
             self.logger.info("Requested termination of executor %s", self.name)
+            self._terminated = True
+            # If we encounter termination of executor, we should cancel current running task and
+            # set block launch of any other tasks
+            self._cancel_task()
             return False
         # pylint: disable=W0703,broad-except
         except Exception as e:
@@ -112,31 +124,32 @@ class Executor(multiprocessing.Process):
     def _process_message(self, msg):
         """
         Process message and take action, e.g. terminate process, execute callback, etc. Message
-        types are defined above in the package.
+        types are defined above in the package. Note that this can take actions on tasks, e.g.
+        when task is cancelled, so the subsequent processing of task, will work with updated state.
 
         :param msg: message to process
         """
+        self.logger.debug("Received message %s", msg)
         if isinstance(msg, Message) and msg.status == MESSAGE_SHUTDOWN:
             raise TerminationException()
         else:
-            self.logger.debug("Invalid message %s is ignored", msg)
+            self.logger.info("Invalid message %s is ignored", msg)
 
     def _process_task(self):
         """
         Process individual task, returns exit code for each task following available API.
 
-        :return: task exit code, see Task API for more information
+        :return: task exit code (see Task API), or None, if exit code is not resolved
         """
-        # if we have active task, we poll status of the task. If task is finished, we send message
-        # to the main thread
         if not self.active_task:
             try:
-                # extract element without blocking, raises Queue.Empty, if no tasks are available
+                # Extract element without blocking, raises Queue.Empty, if no tasks are available
                 self.active_task = self.task_queue.get(block=False)
             except threadqueue.Empty:
-                self.logger.debug("No tasks available")
+                self.logger.info("No tasks available")
                 self.active_task = None
-        # at this point we check if we can actually launch task
+        # At this point we check if we can actually launch task
+        exit_code = None
         if self.active_task:
             task_id = self.active_task.uid
             if self.active_task.is_pending():
@@ -144,16 +157,30 @@ class Executor(multiprocessing.Process):
                 self.active_task.async_launch()
                 self.conn.send(Message(MESSAGE_TASK_STARTED, task_id=task_id))
                 self.logger.info("Started task %s", task_id)
-                return None
+                exit_code = None
             elif self.active_task.is_running():
                 # task is running, nothing we can do, but wait
-                return None
+                exit_code = None
             elif self.active_task.is_done():
-                exit_code = self.active_task.exit_status()
+                exit_code = self.active_task.exit_code()
                 self.conn.send(Message(MESSAGE_TASK_FINISHED, task_id=task_id, exit_code=exit_code))
                 self.logger.info("Finished task %s, exit_code=%s", task_id, exit_code)
                 self.active_task = None
-                return exit_code
+        # Return exit code obtained from if-else branches, note that if executor does not have any
+        # tasks to run, we return None similar to when task is running.
+        return exit_code
+
+    def _cancel_task(self):
+        """
+        Cancel current running task, if available.
+        """
+        if self.active_task:
+            task_id = self.active_task.uid
+            self.active_task.terminate()
+            self.conn.send(Message(MESSAGE_TASK_KILLED, task_id=task_id))
+            self.logger.info("Killed task %s", task_id)
+        else:
+            self.logger.info("No active task to terminate")
 
     def run(self):
         """
