@@ -38,6 +38,82 @@ class TerminationException(Exception):
         msg = message if message else "Requested termination"
         super(TerminationException, self).__init__(msg)
 
+class Task(object):
+    """
+    Task is a unit of execution in scheduler, all backends should implement this interface for
+    their execution requests, so they can be launched on executor. Note that some methods might
+    require availability status of backend. Main task API consists of several methods:
+    - is_pending()
+    - is_running()
+    - is_done()
+    - async_launch()
+    - terminate()
+
+    Also each task must overwrite property for a unique identifier, and exit_code to return status
+    of finished task.
+    """
+    @property
+    def uid(self):
+        """
+        Return unique identifier for this task, it is recommended to be globally unique.
+
+        :return: unique identifier
+        """
+        raise NotImplementedError()
+
+    @property
+    def exit_code(self):
+        """
+        Return exit code (status) of the task. If task has not been launched or running, should
+        return None, and return valid status in case it was finished or terminated.
+
+        :return: exit code
+        """
+        raise NotImplementedError()
+
+    def is_pending(self):
+        """
+        Return True, if task is pending and is ready to be launched on executor, this also includes
+        availability of backend task was created by, e.g. Spark job is ready to be launched, but
+        Spark cluster is not available, then method should return False.
+
+        :return: True, if task can be launched, False otherwise
+        """
+        raise NotImplementedError()
+
+    def is_running(self):
+        """
+        Return True, if task is currently running on backend. This method should be fairly fast,
+        because it will be pinged with potentially high frequency.
+
+        :return: True, if task is running, False otherwise
+        """
+        raise NotImplementedError()
+
+    def is_done(self):
+        """
+        Return True, if task is done (finished), this should also include case when task was
+        terminated. Method must also set exit code for the task, thus how scheduler will
+        distinguish between failed and succeeded tasks.
+
+        :return: True, if task is finished or terminated, False otherwise
+        """
+        raise NotImplementedError()
+
+    def async_launch(self):
+        """
+        Asynchronously launch task, because executor does not support launching tasks in a separate
+        thread yet. For example, spawning shell process in the background, etc.
+        """
+        raise NotImplementedError()
+
+    def terminate(self):
+        """
+        Terminate task, this should ask termination of all background processes and close all
+        resources associated with task. Method must set exit code for the task.
+        """
+        raise NotImplementedError()
+
 class Executor(multiprocessing.Process):
     """
     Executor process to run tasks and receive messages from scheduler. It represents long running
@@ -162,7 +238,7 @@ class Executor(multiprocessing.Process):
                 # task is running, nothing we can do, but wait
                 exit_code = None
             elif self.active_task.is_done():
-                exit_code = self.active_task.exit_code()
+                exit_code = self.active_task.exit_code
                 self.conn.send(Message(MESSAGE_TASK_FINISHED, task_id=task_id, exit_code=exit_code))
                 self.logger.info("Finished task %s, exit_code=%s", task_id, exit_code)
                 self.active_task = None
