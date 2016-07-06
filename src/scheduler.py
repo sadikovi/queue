@@ -43,15 +43,26 @@ class Task(object):
     Task is a unit of execution in scheduler, all backends should implement this interface for
     their execution requests, so they can be launched on executor. Note that some methods might
     require availability status of backend. Main task API consists of several methods:
-    - is_pending()
-    - is_running()
-    - is_done()
+    - status()
     - async_launch()
     - terminate()
 
     Also each task must overwrite property for a unique identifier, and exit_code to return status
     of finished task.
     """
+
+    """
+    Task statuses to use.
+    """
+    # Task is blocked, e.g. by backend availability, will not be scheduled until resolved
+    BLOCKED = "BLOCKED"
+    # Task is pending, next after BLOCKED status, meaning good to launch
+    PENDING = "PENDING"
+    # Task is running on backend
+    RUNNING = "RUNNING"
+    # Task is finished, either failed or succeeded, which is determined by exit code
+    FINISHED = "FINISHED"
+
     @property
     def uid(self):
         """
@@ -71,32 +82,12 @@ class Task(object):
         """
         raise NotImplementedError()
 
-    def is_pending(self):
+    def status(self):
         """
-        Return True, if task is pending and is ready to be launched on executor, this also includes
-        availability of backend task was created by, e.g. Spark job is ready to be launched, but
-        Spark cluster is not available, then method should return False.
+        Return current status of the task. Should take into account backend availability, state of
+        the resources allocated, or background process running.
 
-        :return: True, if task can be launched, False otherwise
-        """
-        raise NotImplementedError()
-
-    def is_running(self):
-        """
-        Return True, if task is currently running on backend. This method should be fairly fast,
-        because it will be pinged with potentially high frequency.
-
-        :return: True, if task is running, False otherwise
-        """
-        raise NotImplementedError()
-
-    def is_done(self):
-        """
-        Return True, if task is done (finished), this should also include case when task was
-        terminated. Method must also set exit code for the task, thus how scheduler will
-        distinguish between failed and succeeded tasks.
-
-        :return: True, if task is finished or terminated, False otherwise
+        :return: enum status of the task (see above)
         """
         raise NotImplementedError()
 
@@ -107,10 +98,10 @@ class Task(object):
         """
         raise NotImplementedError()
 
-    def terminate(self):
+    def cancel(self):
         """
-        Terminate task, this should ask termination of all background processes and close all
-        resources associated with task. Method must set exit code for the task.
+        Cancel task, this should ask termination of all background processes and close resources
+        associated with task. Can block thread to execute code, must set exit code for the task.
         """
         raise NotImplementedError()
 
@@ -228,20 +219,23 @@ class Executor(multiprocessing.Process):
         exit_code = None
         if self.active_task:
             task_id = self.active_task.uid
-            if self.active_task.is_pending():
+            status = self.active_task.status()
+            if status == Task.PENDING:
                 # now we need to launch it and log action, note that launch should be asynchronous
                 self.active_task.async_launch()
                 self.conn.send(Message(MESSAGE_TASK_STARTED, task_id=task_id))
                 self.logger.info("Started task %s", task_id)
                 exit_code = None
-            elif self.active_task.is_running():
+            elif status == Task.RUNNING:
                 # task is running, nothing we can do, but wait
                 exit_code = None
-            elif self.active_task.is_done():
+            elif status == Task.FINISHED:
                 exit_code = self.active_task.exit_code
                 self.conn.send(Message(MESSAGE_TASK_FINISHED, task_id=task_id, exit_code=exit_code))
                 self.logger.info("Finished task %s, exit_code=%s", task_id, exit_code)
                 self.active_task = None
+            else:
+                self.logger.info("Blocked task %s, ping under-system implementation", task_id)
         # Return exit code obtained from if-else branches, note that if executor does not have any
         # tasks to run, we return None similar to when task is running.
         return exit_code
@@ -252,9 +246,9 @@ class Executor(multiprocessing.Process):
         """
         if self.active_task:
             task_id = self.active_task.uid
-            self.active_task.terminate()
+            self.active_task.cancel()
             self.conn.send(Message(MESSAGE_TASK_KILLED, task_id=task_id))
-            self.logger.info("Killed task %s", task_id)
+            self.logger.info("Cancelled task %s", task_id)
         else:
             self.logger.info("No active task to terminate")
 
