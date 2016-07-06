@@ -26,9 +26,9 @@ class Message(object):
 
 # Set of messages for executors
 MESSAGE_SHUTDOWN = "SHUTDOWN"
-MESSAGE_TASK_STARTED = "MESSAGE_TASK_STARTED"
-MESSAGE_TASK_FINISHED = "MESSAGE_TASK_FINISHED"
-MESSAGE_TASK_KILLED = "MESSAGE_TASK_KILLED"
+MESSAGE_TASK_STARTED = "TASK_STARTED"
+MESSAGE_TASK_FINISHED = "TASK_FINISHED"
+MESSAGE_TASK_KILLED = "TASK_KILLED"
 
 class TerminationException(Exception):
     """
@@ -51,9 +51,7 @@ class Task(object):
     of finished task.
     """
 
-    """
-    Task statuses to use.
-    """
+    # == Task statuses ==
     # Task is blocked, e.g. by backend availability, will not be scheduled until resolved
     BLOCKED = "BLOCKED"
     # Task is pending, next after BLOCKED status, meaning good to launch
@@ -136,7 +134,7 @@ class Executor(multiprocessing.Process):
         self.active_task = None
         # flag to indicate if executor is terminated
         self._terminated = False
-        super(Executor, self).__init__()
+        super(Executor, self).__init__(name=name)
 
     def _get_default_logger(self, name):
         """
@@ -249,6 +247,7 @@ class Executor(multiprocessing.Process):
             self.active_task.cancel()
             self.conn.send(Message(MESSAGE_TASK_KILLED, task_id=task_id))
             self.logger.info("Cancelled task %s", task_id)
+            self.active_task = None
         else:
             self.logger.info("No active task to terminate")
 
@@ -259,7 +258,7 @@ class Executor(multiprocessing.Process):
         immediately return status False.
         """
         proceed = True
-        while proceed:
+        while proceed: # pragma: no branch
             proceed = self.iteration()
             if not proceed:
                 return False
