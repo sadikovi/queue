@@ -4,6 +4,7 @@ import logging
 import multiprocessing
 import Queue as threadqueue
 import time
+import src.const as const
 
 class Message(object):
     """
@@ -45,7 +46,7 @@ class Task(object):
     require availability status of backend. Main task API consists of several methods:
     - status()
     - async_launch()
-    - terminate()
+    - cancel()
 
     Also each task must overwrite property for a unique identifier, and exit_code to return status
     of finished task.
@@ -108,21 +109,22 @@ class Executor(multiprocessing.Process):
     Executor process to run tasks and receive messages from scheduler. It represents long running
     process with polling interval, all communications are done through pipe. Executor guarantees
     termination of task with termination of subprocess, assuming that task implements interface
-    correctly.
+    correctly. Takes dictionary of task queues that are mapped to priorities, higher priority is
+    checked first.
     """
-    def __init__(self, name, conn, task_queue, timeout=0.5, logger=None):
+    def __init__(self, name, conn, task_queue_map, timeout=0.5, logger=None):
         """
         Create instance of Executor.
 
         :param name: friendly executor name, e.g. "executor-1"
         :param conn: Connection instance to receive and send messages
-        :param task_queue: task queue
+        :param task_queue_map: task queue as a dict [priority: queue]
         :param timeout: polling interval
         :param logger: provided logger, if None then default logger is used
         """
         self.name = name
         self.conn = conn
-        self.task_queue = task_queue
+        self.task_queue_map = task_queue_map
         self.timeout = timeout
         # if no logger defined create new logger and add null handler
         if logger:
@@ -200,6 +202,24 @@ class Executor(multiprocessing.Process):
         else:
             self.logger.info("Invalid message %s is ignored", msg)
 
+    def _get_new_task(self):
+        """
+        Extract new task from priority list of queues. If no tasks found for priority or priority
+        does not exist in dictionary, next priority is checked. If task is found, it is returned,
+        otherwise None.
+
+        :return: new available task across priorities
+        """
+        for priority in const.PRIORITIES:
+            self.logger.debug("Searching task in queue for priority %s" % priority)
+            try:
+                return self.task_queue_map[priority].get(block=False)
+            except threadqueue.Empty:
+                self.logger.debug("No tasks available in queue for priority %s" % priority)
+            except KeyError:
+                self.logger.debug("Non-existent priority %s skipped" % priority)
+        return None
+
     def _process_task(self):
         """
         Process individual task, returns exit code for each task following available API.
@@ -207,12 +227,7 @@ class Executor(multiprocessing.Process):
         :return: task exit code (see Task API), or None, if exit code is not resolved
         """
         if not self.active_task:
-            try:
-                # Extract element without blocking, raises Queue.Empty, if no tasks are available
-                self.active_task = self.task_queue.get(block=False)
-            except threadqueue.Empty:
-                self.logger.info("No tasks available")
-                self.active_task = None
+            self.active_task = self._get_new_task()
         # At this point we check if we can actually launch task
         exit_code = None
         if self.active_task:
@@ -257,9 +272,77 @@ class Executor(multiprocessing.Process):
         iteration polls new messages from connection and checks running task. If iteration fails we
         immediately return status False.
         """
+        self.logger.info("Start executor %s, time=%s", self.name, time.time())
         proceed = True
         while proceed: # pragma: no branch
             proceed = self.iteration()
             if not proceed:
                 return False
             time.sleep(self.timeout)
+
+class Scheduler(object):
+    """
+    Scheduler class prepares and launches executors and provides means to pass and process tasks
+    and messages from executors. Should be one instance per application.
+    """
+    def __init__(self, num_executors, timeout=0.5, logger=None):
+        """
+        Create new instance of Scheduler.
+
+        :param num_executors: number of executors to initialize
+        :param timeout: executor's timeout
+        :param logger: executor's logger
+        """
+        self.num_executors = int(num_executors)
+        self.timeout = timeout
+        self.logger = logger
+        # pipe connections to send and receive messages to/from executors
+        self.pipe = {}
+        # list of executors that are initialized
+        self.executors = []
+        # initialize priority queues, the lower number means higher priority
+        self.task_queue_map = {
+            const.PRIORITY_0: multiprocessing.Queue(),
+            const.PRIORITY_1: multiprocessing.Queue(),
+            const.PRIORITY_2: multiprocessing.Queue()
+        }
+
+    def _prepare_executor(self, name):
+        """
+        Prepare single executor, this creates connection for executor and launches it as daemon
+        process, and appends to executors list.
+
+        :param name: executor's name
+        :return: created executor (it is already added to the list of executors)
+        """
+        main_conn, exec_conn = multiprocessing.Pipe()
+        exc = Executor(name, exec_conn, self.task_queue_map, timeout=self.timeout,
+                       logger=self.logger)
+        exc.daemon = True
+        self.executors.append(exc)
+        self.pipe[exc.name] = main_conn
+        return exc
+
+    def start(self):
+        """
+        Start scheduler, launches executors asynchronously.
+        """
+        # Launch executors and save pipes per each
+        for i in range(self.num_executors):
+            exc = self._prepare_executor("Executor-%s" % i)
+            exc.start()
+
+    def stop(self):
+        """
+        Stop scheduler, terminates executors, and all tasks that were running at the time.
+        """
+        for conn in self.pipe.values():
+            conn.send(Message(MESSAGE_SHUTDOWN))
+        time.sleep(5)
+        for exc in self.executors:
+            if exc.is_alive():
+                exc.terminate()
+            exc.join()
+        self.pipe = None
+        self.executors = None
+        self.task_queue_map = None

@@ -61,13 +61,6 @@ class ConstSuite(unittest.TestCase):
         self.assertEqual(const.PRIORITY_0, 0)
         self.assertEqual(const.PRIORITY_1, 1)
         self.assertEqual(const.PRIORITY_2, 2)
-        self.assertEqual(const.PRIORITY_3, 3)
-        self.assertEqual(const.PRIORITY_4, 4)
-        self.assertEqual(const.PRIORITY_5, 5)
-        self.assertEqual(const.PRIORITY_6, 6)
-        self.assertEqual(const.PRIORITY_7, 7)
-        self.assertEqual(const.PRIORITY_8, 8)
-        self.assertEqual(const.PRIORITY_9, 9)
 
 # Load test suites
 def suites():
