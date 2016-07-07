@@ -36,13 +36,14 @@ class TerminationExceptionSuite(unittest.TestCase):
         except scheduler.TerminationException as err:
             self.assertEqual("%s" % err, "Test")
 
+# pylint: disable=W0223,W0231
+class TestTask(scheduler.Task):
+    pass
+# pylint: enable=W0223,W0231
+
 class TaskSuite(unittest.TestCase):
     def setUp(self):
-        # pylint: disable=W0223,W0231
-        class Test(scheduler.Task):
-            pass
-        # pylint: enable=W0223,W0231
-        self.task = Test()
+        self.task = TestTask()
 
     def test_uid(self):
         with self.assertRaises(NotImplementedError):
@@ -262,6 +263,20 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(mock_time.sleep.call_count, 0)
 # pylint: enable=W0212,protected-access
 
+
+class Atask(scheduler.Task):
+    @property
+    def uid(self):
+        return "123"
+    @property
+    def exit_code(self):
+        return 1
+    def status(self):
+        return scheduler.Task.BLOCKED
+    def async_launch(self):
+        return None
+    def cancel(self):
+        return None
 # pylint: disable=W0212,protected-access
 class SchedulerSuite(unittest.TestCase):
     def test_init_1(self):
@@ -294,6 +309,32 @@ class SchedulerSuite(unittest.TestCase):
         # assertions, check that prepare_executor was called number of executors times
         self.assertEqual(sched._prepare_executor.call_count, 3)
         self.assertEqual(mock_exc.start.call_count, 3)
+
+    def test_put_wrong_priority(self):
+        sched = scheduler.Scheduler(3, timeout=0.5, logger=mock.Mock())
+        with self.assertRaises(KeyError):
+            sched.put("abc", scheduler.Task())
+
+    def test_put_wrong_task(self):
+        sched = scheduler.Scheduler(3, timeout=0.5, logger=mock.Mock())
+        with self.assertRaises(TypeError):
+            sched.put(const.PRIORITY_0, None)
+
+    def test_put(self):
+        sched = scheduler.Scheduler(3, timeout=0.5, logger=mock.Mock())
+        mock_task = scheduler.Task()
+        sched.task_queue_map = {
+            const.PRIORITY_0: mock.Mock(),
+            const.PRIORITY_1: mock.Mock(),
+            const.PRIORITY_2: mock.Mock()
+        }
+        sched.put(const.PRIORITY_0, mock_task)
+        sched.put(const.PRIORITY_1, mock_task)
+        sched.put(const.PRIORITY_2, mock_task)
+        # assertions
+        sched.task_queue_map[const.PRIORITY_0].put.assert_called_once_with(mock_task, block=False)
+        sched.task_queue_map[const.PRIORITY_1].put.assert_called_once_with(mock_task, block=False)
+        sched.task_queue_map[const.PRIORITY_2].put.assert_called_once_with(mock_task, block=False)
 
     @mock.patch("src.scheduler.time")
     def test_stop(self, mock_time):

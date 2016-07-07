@@ -332,6 +332,19 @@ class Scheduler(object):
             exc = self._prepare_executor("Executor-%s" % i)
             exc.start()
 
+    def put(self, priority, task):
+        """
+        Add task for priority.
+
+        :param priority: priority of task, must be one of the const.PRIORITY_x
+        :param task: task to add, must be instance of Task
+        """
+        if priority not in self.task_queue_map:
+            raise KeyError("No priority %s found in queue map" % priority)
+        if not isinstance(task, Task):
+            raise TypeError("%s != Task" % type(task))
+        self.task_queue_map[priority].put(task, block=False)
+
     def stop(self):
         """
         Stop scheduler, terminates executors, and all tasks that were running at the time.
