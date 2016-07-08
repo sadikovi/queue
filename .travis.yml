@@ -21,6 +21,7 @@ script:
   # python, we run lint with coverage and display coverage output
   - bin/pylint --python=python
   - bin/coverage --python=python
+  - bin/it --python=python
 
 after_success:
   coveralls
