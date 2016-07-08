@@ -28,9 +28,12 @@ class Message(object):
 
 # Set of messages for executors
 MESSAGE_SHUTDOWN = "SHUTDOWN"
+# Message to cancel task
+MESSAGE_TASK_CANCEL = "TASK_CANCEL"
+# Message received from executors with task status
 MESSAGE_TASK_STARTED = "TASK_STARTED"
 MESSAGE_TASK_FINISHED = "TASK_FINISHED"
-MESSAGE_TASK_KILLED = "TASK_KILLED"
+MESSAGE_TASK_CANCELLED = "TASK_CANCELLED"
 
 class TerminationException(Exception):
     """
@@ -135,6 +138,9 @@ class Executor(multiprocessing.Process):
             self.logger = self._get_default_logger(log_name)
         # we also keep reference to active task, this will be reassigned for every iteration
         self.active_task = None
+        # list of task ids to cancel, we add new task_id when specific message arrives and remove
+        # task_id that has been removed
+        self.cancel_task_ids = set()
         # flag to indicate if executor is terminated
         self._terminated = False
         super(Executor, self).__init__(name=name)
@@ -198,8 +204,16 @@ class Executor(multiprocessing.Process):
         :param msg: message to process
         """
         self.logger.debug("Received message %s", msg)
-        if isinstance(msg, Message) and msg.status == MESSAGE_SHUTDOWN:
-            raise TerminationException()
+        if isinstance(msg, Message):
+            if msg.status == MESSAGE_SHUTDOWN: # pragma: no branch
+                raise TerminationException()
+            elif msg.status == MESSAGE_TASK_CANCEL: # pragma: no branch
+                # update set of tasks to cancel
+                if "task_id" in msg.arguments:
+                    self.cancel_task_ids.add(msg.arguments["task_id"])
+            else:
+                # valid but unrecognized message, no-op
+                pass
         else:
             self.logger.info("Invalid message %s is ignored", msg)
 
@@ -223,7 +237,9 @@ class Executor(multiprocessing.Process):
 
     def _process_task(self):
         """
-        Process individual task, returns exit code for each task following available API.
+        Process individual task, returns exit code for each task following available API. One of
+        the checks is performed to test current task_id against cancelled list, and discard task,
+        if it has been marked as cancelled, or terminate running task.
 
         :return: task exit code (see Task API), or None, if exit code is not resolved
         """
@@ -234,7 +250,12 @@ class Executor(multiprocessing.Process):
         if self.active_task:
             task_id = self.active_task.uid
             status = self.active_task.status()
-            if status == Task.PENDING:
+            # before checking statuses and proceed execution, we check if current task was
+            # requested to be cancelled, if yes, we remove it from set of ids.
+            if task_id in self.cancel_task_ids:
+                self._cancel_task()
+                self.cancel_task_ids.discard(task_id)
+            elif status == Task.PENDING:
                 # now we need to launch it and log action, note that launch should be asynchronous
                 self.active_task.async_launch()
                 self.conn.send(Message(MESSAGE_TASK_STARTED, task_id=task_id))
@@ -261,7 +282,7 @@ class Executor(multiprocessing.Process):
         if self.active_task:
             task_id = self.active_task.uid
             self.active_task.cancel()
-            self.conn.send(Message(MESSAGE_TASK_KILLED, task_id=task_id))
+            self.conn.send(Message(MESSAGE_TASK_CANCELLED, task_id=task_id))
             self.logger.info("Cancelled task %s", task_id)
             self.active_task = None
         else:
@@ -380,6 +401,18 @@ class Scheduler(object):
         if not isinstance(task, Task):
             raise TypeError("%s != Task" % type(task))
         self.task_queue_map[priority].put(task, block=False)
+
+    def cancel(self, task_id):
+        """
+        Cancel task by provided task_id, this includes either termination of currently running task,
+        or removal of future scheduled tasks, note that this will be no-op if task that has been
+        already processed.
+
+        :param task_id: task id to cancel, no-op if task_id is None
+        """
+        if task_id:
+            for conn in self.pipe.values():
+                conn.send(Message(MESSAGE_TASK_CANCEL, task_id=task_id))
 
     def stop(self):
         """

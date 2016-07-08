@@ -93,6 +93,7 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(exc.task_queue_map, self.queue_map)
         self.assertEqual(exc.timeout, 1)
         self.assertEqual(exc.logger, True)
+        self.assertEqual(exc.cancel_task_ids, set())
 
     def test_init_2(self):
         exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=10, logger=None)
@@ -101,14 +102,34 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(exc.task_queue_map, self.queue_map)
         self.assertEqual(exc.timeout, 10)
         self.assertNotEqual(exc.logger, None)
+        self.assertEqual(exc.cancel_task_ids, set())
 
-    def test_process_message(self):
-        exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock.Mock())
-        # should process None message
+    def test_process_message_invalid(self):
+        mock_logger = mock.Mock()
+        exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock_logger)
+        # should process None message, but it should be no-op
         exc._process_message(None)
+        mock_logger.info.assert_called_with("Invalid message %s is ignored", None)
+        # should process arbitrary string message, but it should be no-op
         exc._process_message("SHUTDOWN")
+        mock_logger.info.assert_called_with("Invalid message %s is ignored", "SHUTDOWN")
+
+    def test_process_message_shutdown(self):
+        exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock.Mock())
         with self.assertRaises(scheduler.TerminationException):
             exc._process_message(scheduler.Message(scheduler.MESSAGE_SHUTDOWN))
+
+    def test_process_message_cancel(self):
+        exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock.Mock())
+        # cancel task without providing task id, should be no-op
+        exc._process_message(scheduler.Message(scheduler.MESSAGE_TASK_CANCEL))
+        self.assertEqual(exc.cancel_task_ids, set())
+        # cancel task providing specific id
+        msg = scheduler.Message(scheduler.MESSAGE_TASK_CANCEL, task_id="123")
+        exc._process_message(msg)
+        self.assertEqual(msg.status, scheduler.MESSAGE_TASK_CANCEL)
+        self.assertEqual(msg.arguments["task_id"], "123")
+        self.assertEqual(exc.cancel_task_ids, set(["123"]))
 
     def test_get_new_task_empty_map(self):
         exc = scheduler.Executor("name", self.conn, {}, timeout=1, logger=mock.Mock())
@@ -196,6 +217,19 @@ class ExecutorSuite(unittest.TestCase):
         conn_msg = "call(Message[TASK_FINISHED]{'exit_code': 1, 'task_id': '123'})"
         self.assertEqual(str(self.conn.send.call_args_list[0]), conn_msg)
 
+    def test_process_task_cancelled(self):
+        self.mock_task.uid = "123"
+        exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock.Mock())
+        exc.active_task = self.mock_task
+        exc.cancel_task_ids = set(["123"])
+        # method call
+        self.assertEqual(exc._process_task(), None)
+        # assertions
+        self.assertEqual(exc.active_task, None)
+        self.assertEqual(exc.cancel_task_ids, set())
+        conn_msg = "call(Message[TASK_CANCELLED]{'task_id': '123'})"
+        self.assertEqual(str(self.conn.send.call_args_list[0]), conn_msg)
+
     def test_cancel_task(self):
         exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock.Mock())
         # test when no active task
@@ -208,7 +242,7 @@ class ExecutorSuite(unittest.TestCase):
         exc._cancel_task()
         self.assertEqual(exc.active_task, None)
         self.mock_task.cancel.assert_called_once_with()
-        conn_msg = "call(Message[TASK_KILLED]{'task_id': '123'})"
+        conn_msg = "call(Message[TASK_CANCELLED]{'task_id': '123'})"
         self.assertEqual(str(self.conn.send.call_args_list[0]), conn_msg)
 
     def test_iteration_executor_terminated(self):
@@ -358,6 +392,21 @@ class SchedulerSuite(unittest.TestCase):
         sched.task_queue_map[const.PRIORITY_0].put.assert_called_once_with(mock_task, block=False)
         sched.task_queue_map[const.PRIORITY_1].put.assert_called_once_with(mock_task, block=False)
         sched.task_queue_map[const.PRIORITY_2].put.assert_called_once_with(mock_task, block=False)
+
+    def test_cancel(self):
+        sched = scheduler.Scheduler(3, timeout=0.5, logger=mock.Mock())
+        # no task_id provided -> no-op
+        sched.pipe = mock.Mock()
+        sched.cancel(None)
+        self.assertEqual(sched.pipe.values.call_count, 0)
+        # task_id provided, and connections are available
+        mock_conn = mock.Mock()
+        sched.pipe.values = mock.Mock()
+        sched.pipe.values.return_value = [mock_conn]
+        sched.cancel("123")
+        sched.pipe.values.assert_called_once_with()
+        conn_msg = "call(Message[TASK_CANCEL]{'task_id': '123'})"
+        self.assertEqual(str(mock_conn.send.call_args_list[0]), conn_msg)
 
     @mock.patch("src.scheduler.time")
     def test_stop(self, mock_time):
