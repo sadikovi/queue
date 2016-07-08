@@ -295,6 +295,11 @@ class ExecutorSuite(unittest.TestCase):
         exc.iteration = mock.create_autospec(exc.iteration, return_value=False)
         self.assertEqual(exc.run(), False)
         self.assertEqual(mock_time.sleep.call_count, 0)
+        # test when iteration returns True, and then False
+        exc.iteration = mock.Mock()
+        exc.iteration.side_effect = [True, True, False]
+        self.assertEqual(exc.run(), False)
+        self.assertEqual(mock_time.sleep.call_count, 2)
 # pylint: enable=W0212,protected-access
 
 
