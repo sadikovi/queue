@@ -3,6 +3,7 @@
 import logging
 import multiprocessing
 import Queue as threadqueue
+import threading
 import time
 import src.const as const
 
@@ -323,6 +324,32 @@ class Scheduler(object):
         self.pipe[exc.name] = main_conn
         return exc
 
+    def _prepare_polling_thread(self, name, target=None):
+        """
+        Prepare maintenance thread for polling messages from Pipe. This returns None, when no
+        target consumer is provided.
+
+        :param name: name of the polling thread
+        :param target: target function that should accept argument as list of messages, can be None
+        :return: created daemon thread or None, if target is not specified
+        """
+        # Do not create any thread, if there is no target provided, because of saving resources
+        # on polling messages without consumer.
+        if not target:
+            return None
+        # Thread is considered to be long-lived, and is terminated when scheduler is stopped.
+        def poll_messages():
+            while True:
+                msg_list = []
+                for conn in self.pipe.values():
+                    while conn.poll():
+                        msg_list.append(conn.recv())
+                target(msg_list)
+                time.sleep(self.timeout)
+        thread = threading.Thread(name=name, target=poll_messages)
+        thread.daemon = True
+        return thread
+
     def start(self):
         """
         Start scheduler, launches executors asynchronously.
@@ -331,6 +358,15 @@ class Scheduler(object):
         for i in range(self.num_executors):
             exc = self._prepare_executor("Executor-%s" % i)
             exc.start()
+
+    def start_maintenance(self, polling_target=None):
+        """
+        Start all maintenance threads and processes.
+        """
+        # Launch polling thread for messages
+        thread = self._prepare_polling_thread("Polling-1", target=polling_target)
+        if thread:
+            thread.start()
 
     def put(self, priority, task):
         """
@@ -351,6 +387,7 @@ class Scheduler(object):
         """
         for conn in self.pipe.values():
             conn.send(Message(MESSAGE_SHUTDOWN))
+        # timeout to terminate processes and process remaining messages in Pipe by polling thread
         time.sleep(5)
         for exc in self.executors:
             if exc.is_alive():

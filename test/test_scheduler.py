@@ -299,6 +299,17 @@ class SchedulerSuite(unittest.TestCase):
         self.assertEqual(sched.executors, [exc])
         self.assertTrue("test" in sched.pipe)
 
+    def test_prepare_polling_thread(self):
+        sched = scheduler.Scheduler(3, timeout=0.5, logger=mock.Mock())
+        # check polling thread without consumer
+        thread = sched._prepare_polling_thread("test", target=None)
+        self.assertEqual(thread, None)
+        # check polling thread with consumer
+        thread = sched._prepare_polling_thread("test", target=mock.Mock())
+        self.assertNotEqual(thread, None)
+        self.assertEqual(thread.daemon, True)
+        self.assertEqual(thread.name, "test")
+
     def test_start(self):
         sched = scheduler.Scheduler(3, timeout=0.5, logger=mock.Mock())
         mock_exc = mock.Mock()
@@ -309,6 +320,18 @@ class SchedulerSuite(unittest.TestCase):
         # assertions, check that prepare_executor was called number of executors times
         self.assertEqual(sched._prepare_executor.call_count, 3)
         self.assertEqual(mock_exc.start.call_count, 3)
+
+    def test_start_maintenance(self):
+        sched = scheduler.Scheduler(3, timeout=0.5, logger=mock.Mock())
+        sched._prepare_polling_thread = mock.Mock()
+        mock_thread = mock.Mock()
+        sched._prepare_polling_thread.return_value = mock_thread
+        # launch maintenance should not result in any error
+        sched.start_maintenance()
+        mock_thread.start.assert_called_once_with()
+        # launch maintenance when thread is None
+        sched._prepare_polling_thread.return_value = None
+        sched.start_maintenance()
 
     def test_put_wrong_priority(self):
         sched = scheduler.Scheduler(3, timeout=0.5, logger=mock.Mock())
