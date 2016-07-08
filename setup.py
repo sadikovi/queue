@@ -48,6 +48,20 @@ class QueueServerCommand(Command):
         import src.queue as queue
         queue.start(host=self.host, port=self.port)
 
+class IntegrationTestCommand(Command):
+    description = "Run integration tests"
+    user_options = []
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        import it
+        sys.exit(it.main())
+
 setup(
     name="queue",
     version=VERSION,
@@ -60,6 +74,7 @@ setup(
     license="Apache License 2.0",
     test_suite="test",
     cmdclass={
-        "queue_server": QueueServerCommand
+        "queue_server": QueueServerCommand,
+        "run_it": IntegrationTestCommand
     }
 )

@@ -362,9 +362,12 @@ class Scheduler(object):
         def poll_messages():
             while True:
                 msg_list = []
-                for conn in self.pipe.values():
-                    while conn.poll():
-                        msg_list.append(conn.recv())
+                # sometimes thread can report that pipe is None, which might require lock before
+                # processing, currently we just skip iteration, if it is None.
+                if self.pipe is not None:
+                    for conn in self.pipe.values():
+                        while conn.poll():
+                            msg_list.append(conn.recv())
                 target(msg_list)
                 time.sleep(self.timeout)
         thread = threading.Thread(name=name, target=poll_messages)

@@ -19,4 +19,5 @@ if [ -z "$WHICH_PYTHON" ]; then
   exit 1
 fi
 
-$WHICH_PYTHON $ROOT_DIR/run_pylint.py src test it *.py
+# run integration tests
+$WHICH_PYTHON $ROOT_DIR/setup.py run_it

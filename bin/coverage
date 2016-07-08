@@ -19,5 +19,6 @@ if [ -z "$WHICH_PYTHON" ]; then
   exit 1
 fi
 
+# run unit-tests and generate report
 $WHICH_PYTHON $ROOT_DIR/run_coverage.py run --branch --source=src $ROOT_DIR/setup.py test && \
   $WHICH_PYTHON $ROOT_DIR/run_coverage.py report -m
