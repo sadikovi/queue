@@ -302,7 +302,6 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(mock_time.sleep.call_count, 2)
 # pylint: enable=W0212,protected-access
 
-
 class Atask(scheduler.Task):
     @property
     def uid(self):
