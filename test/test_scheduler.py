@@ -117,7 +117,7 @@ class ExecutorSuite(unittest.TestCase):
     def test_process_message_shutdown(self):
         exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock.Mock())
         with self.assertRaises(scheduler.TerminationException):
-            exc._process_message(scheduler.Message(scheduler.MESSAGE_SHUTDOWN))
+            exc._process_message(scheduler.Message(scheduler.MESSAGE_EXECUTOR_SHUTDOWN))
 
     def test_process_message_cancel(self):
         exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock.Mock())

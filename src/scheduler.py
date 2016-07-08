@@ -27,7 +27,7 @@ class Message(object):
         return self.pretty_name
 
 # Set of messages for executors
-MESSAGE_SHUTDOWN = "SHUTDOWN"
+MESSAGE_EXECUTOR_SHUTDOWN = "EXECUTOR_SHUTDOWN"
 # Message to cancel task
 MESSAGE_TASK_CANCEL = "TASK_CANCEL"
 # Message received from executors with task status
@@ -205,7 +205,7 @@ class Executor(multiprocessing.Process):
         """
         self.logger.debug("Received message %s", msg)
         if isinstance(msg, Message):
-            if msg.status == MESSAGE_SHUTDOWN: # pragma: no branch
+            if msg.status == MESSAGE_EXECUTOR_SHUTDOWN: # pragma: no branch
                 raise TerminationException()
             elif msg.status == MESSAGE_TASK_CANCEL: # pragma: no branch
                 # update set of tasks to cancel
@@ -419,7 +419,7 @@ class Scheduler(object):
         Stop scheduler, terminates executors, and all tasks that were running at the time.
         """
         for conn in self.pipe.values():
-            conn.send(Message(MESSAGE_SHUTDOWN))
+            conn.send(Message(MESSAGE_EXECUTOR_SHUTDOWN))
         # timeout to terminate processes and process remaining messages in Pipe by polling thread
         time.sleep(5)
         for exc in self.executors:
