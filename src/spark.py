@@ -2,6 +2,8 @@
 
 import json
 import re
+import subprocess
+import time
 import types
 import urllib2
 import src.scheduler as scheduler
@@ -47,6 +49,22 @@ def applications(uri):
                     completed = completed and attempt["completed"]
                 parsed.append({"id": app["id"], "name": app["name"], "completed": completed})
         return parsed
+
+def can_submit_task(uri, max_available_slots=1):
+    """
+    Return True, if task can be submitted in Spark cluster. If there are no applications, or
+    number or running applications is less than maximum available slots, then it is considered okay
+    to launch task (True), otherwise return False.
+
+    :param uri: Spark REST url, e.g. http://localhost:8080
+    :param max_available_slots: maximum available slots, default is 1
+    :return: True if can submit task, False otherwise
+    """
+    apps = applications(uri)
+    if apps is None:
+        return False
+    running = [app for app in apps if not app["completed"]]
+    return len(running) < max_available_slots
 
 # == Validation ==
 def validate_spark_options(value):
@@ -207,7 +225,8 @@ class SparkStandaloneTask(scheduler.Task):
 
     @working_directory.setter
     def working_directory(self, value):
-        self.__working_directory = util.readwriteDirectory(value)
+        # working directory can either be None (no stdout) or valid directory
+        self.__working_directory = value if value is None else util.readwriteDirectory(value)
 
     def cmd(self):
         """
@@ -255,10 +274,84 @@ class SparkStandaloneTask(scheduler.Task):
                 self.job_options = validate_job_options(value)
 
     def async_launch(self):
-        pass
+        # spark-submit command to launch
+        command = self.cmd()
+        self.logger.info("Launch command %s", command)
+        buffer_size = 4096
+        # only create stdout and stderr when working directory is provided
+        if self.__working_directory:
+            stdout_path = util.concat(self.__working_directory, "stdout")
+            stderr_path = util.concat(self.__working_directory, "stderr")
+            stdout = util.open(stdout_path, "wb")
+            stderr = util.open(stderr_path, "wb")
+            self.__ps = subprocess.Popen(command, bufsize=buffer_size, stdout=stdout, stderr=stderr,
+                                         close_fds=True)
+        else:
+            self.__ps = subprocess.Popen(command, bufsize=buffer_size, stdout=None, stderr=None,
+                                         close_fds=True)
+        self.logger.info("Process pid=%s", self.__ps.pid)
+        self.__status = scheduler.TASK_RUNNING
 
     def cancel(self):
-        pass
+        """
+        Cancel running task. Process is sent SIGTERM first, and if it is not terminated within 10
+        seconds, SIGKILL is sent permanently and blocked until exit code is returned. Note that
+        status is also assigned as TASK_FINISHED.
+        """
+        if self.__ps:
+            self.__ps.terminate()
+            attempts = 7 # attempts (seconds) to wait before killing process
+            return_code = None
+            while attempts > 0 and return_code is None:
+                time.sleep(1)
+                return_code = self.__ps.poll()
+                attempts -= 1
+            if return_code is None:
+                self.__ps.kill()
+                return_code = self.__ps.wait()
+            self.__returncode = return_code
+        self.__status = scheduler.TASK_FINISHED
+
+    def _current_status(self):
+        """
+        Get current status, for testing purposes only.
+
+        :return: current status of the task
+        """
+        return self.__status
+
+    def _current_ps(self):
+        """
+        Get current process, for testing purposes only.
+
+        :return: current process for the task
+        """
+        return self.__ps
 
     def status(self):
-        pass
+        if self.__status == scheduler.TASK_BLOCKED:
+            # need to check, if tasks can be launched
+            can_submit = can_submit_task(self._web_url)
+            if can_submit:
+                self.__status = scheduler.TASK_PENDING
+        elif self.__status == scheduler.TASK_PENDING:
+            # do nothing, scheduler will launch process
+            pass
+        elif self.__status == scheduler.TASK_RUNNING:
+            if self.__ps:
+                # check process, if return code is not None, process is finished, otherwise,
+                # process status is unchanged, and is TASK_RUNNING
+                return_code = self.__ps.poll()
+                if return_code:
+                    self.__status = scheduler.TASK_FINISHED
+                    self.__returncode = return_code
+            else:
+                # assume it is finished
+                self.logger.debug("Process is not found, assume that task is finished")
+                self.__status = scheduler.TASK_FINISHED
+        elif self.__status == scheduler.TASK_FINISHED:
+            # do nothing, task is finished
+            pass
+        else:
+            pass
+        return self.__status

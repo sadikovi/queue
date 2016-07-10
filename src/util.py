@@ -84,6 +84,16 @@ def mkdir(path, mode):
         raise ValueError("Invalid mode %s is provided" % mode)
     os.mkdir(path, mode)
 
+def open(path, mode):
+    """
+    Shortcut for `open` Python built-in. Read docs on `open` for more information.
+
+    :return: File object based on path and mode
+    """
+    # pylint: disable=W0622,redefined-builtin
+    return open(path, mode)
+    # pylint: enable=W0622,redefined-builtin
+
 # == REST API and URI related methods and classes ===
 class URI(object):
     """

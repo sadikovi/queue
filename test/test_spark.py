@@ -3,7 +3,9 @@
 import unittest
 import mock
 import src.spark as spark
+import src.scheduler as scheduler
 
+# pylint: disable=W0212,protected-access
 class SparkStandaloneTaskSuite(unittest.TestCase):
     # Test of general funcionality
     def test_defaults(self):
@@ -68,6 +70,24 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
             {"id": "2", "name": "abc", "completed": True}
         ])
 
+    @mock.patch("src.spark.applications")
+    def test_can_submit_task_1(self, mock_apps):
+        mock_apps.return_value = None
+        self.assertEqual(spark.can_submit_task("url"), False)
+        self.assertEqual(spark.can_submit_task("url", max_available_slots=3), False)
+
+    @mock.patch("src.spark.applications")
+    def test_can_submit_task_2(self, mock_apps):
+        mock_apps.return_value = []
+        self.assertEqual(spark.can_submit_task("url"), True)
+        self.assertEqual(spark.can_submit_task("url", max_available_slots=3), True)
+
+    @mock.patch("src.spark.applications")
+    def test_can_submit_task_3(self, mock_apps):
+        mock_apps.return_value = [{"completed": False}, {"completed": False}]
+        self.assertEqual(spark.can_submit_task("url"), False)
+        self.assertEqual(spark.can_submit_task("url", max_available_slots=3), True)
+
     # Test of validation
     def test_validate_main_class(self):
         valid_names = ["Class", "com.Class", "com.github.Class", "Main1Class", "1.2.Class"]
@@ -115,7 +135,6 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
     def test_init(self):
         mock_logger = mock.Mock()
         task = spark.SparkStandaloneTask("123", logger=mock_logger)
-        # pylint: disable=W0212,protected-access
         self.assertEqual(task.uid, "123")
         self.assertEqual(task.logger, mock_logger)
         self.assertEqual(task._spark_submit, spark.SPARK_SUBMIT)
@@ -126,7 +145,6 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         self.assertEqual(task.main_class, None)
         self.assertEqual(task.jar, None)
         self.assertEqual(task.job_options, [])
-        # pylint: enable=W0212,protected-access
 
     @mock.patch("src.spark.util")
     def test_working_directory_1(self, mock_util):
@@ -135,7 +153,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         # test setting working directory, should validate path
         mock_util.readwriteDirectory.side_effect = ValueError("Test")
         with self.assertRaises(ValueError):
-            task.working_directory = None
+            task.working_directory = "/failed/dir"
 
     @mock.patch("src.spark.util")
     def test_working_directory_2(self, mock_util):
@@ -144,6 +162,11 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         mock_util.readwriteDirectory.return_value = "/tmp/work"
         task.working_directory = "work"
         self.assertEqual(task.working_directory, "/tmp/work")
+
+    def test_working_directory_3(self):
+        task = spark.SparkStandaloneTask("123", logger=mock.Mock())
+        task.working_directory = None
+        self.assertEqual(task.working_directory, None)
 
     def test_uid(self):
         task = spark.SparkStandaloneTask(None, logger=mock.Mock())
@@ -246,6 +269,96 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         self.assertEqual(task.name, "test")
         self.assertEqual(task.spark_options, {"spark.a": "1"})
         self.assertEqual(task.job_options, ["a", "b", "3"])
+
+    @mock.patch("src.spark.subprocess")
+    def test_async_launch_no_stdout(self, mock_popen):
+        mock_popen.Popen = mock.Mock() # redefine Popen object
+        task = spark.SparkStandaloneTask("123", logger=mock.Mock())
+        task.working_directory = None
+        task.async_launch()
+        self.assertEqual(task._current_status(), scheduler.TASK_RUNNING)
+        mock_popen.Popen.assert_called_with(task.cmd(), bufsize=4096, stdout=None, stderr=None,
+                                            close_fds=True)
+
+    @mock.patch("src.spark.subprocess")
+    @mock.patch("src.spark.util.readwriteDirectory")
+    @mock.patch("src.spark.util.open")
+    def test_async_launch_with_stdout(self, mock_util_open, mock_rw_dir, mock_popen):
+        mock_popen.Popen = mock.Mock() # redefine Popen object
+        mock_util_open.return_value = "stream"
+        mock_rw_dir.return_value = "/tmp/work"
+        task = spark.SparkStandaloneTask("123", logger=mock.Mock())
+        task.working_directory = "work"
+        task.async_launch()
+        self.assertEqual(task._current_status(), scheduler.TASK_RUNNING)
+        mock_popen.Popen.assert_called_with(task.cmd(), bufsize=4096, stdout="stream",
+                                            stderr="stream", close_fds=True)
+        calls = [mock.call("/tmp/work/stdout", "wb"), mock.call("/tmp/work/stderr", "wb")]
+        mock_util_open.assert_has_calls(calls)
+
+    def test_cancel_no_ps(self):
+        task = spark.SparkStandaloneTask("123", logger=mock.Mock())
+        task.cancel()
+        self.assertEqual(task._current_status(), scheduler.TASK_FINISHED)
+
+    @mock.patch("src.spark.subprocess")
+    @mock.patch("src.spark.time")
+    def test_cancel_with_ps_no_exitcode(self, mock_time, mock_popen):
+        mock_time.sleep.return_value = None # remove sleep function
+        mock_popen.Popen = mock.Mock() # redefine Popen object
+        task = spark.SparkStandaloneTask("123", logger=mock.Mock())
+        task.working_directory = None
+        task.async_launch()
+        task._current_ps().poll.return_value = 127
+        task.cancel()
+        self.assertEqual(task._current_status(), scheduler.TASK_FINISHED)
+        self.assertEqual(task.exit_code, 127)
+        task._current_ps().terminate.assert_called_with()
+        task._current_ps().kill.assert_has_calls([])
+
+    @mock.patch("src.spark.subprocess")
+    @mock.patch("src.spark.time")
+    def test_cancel_with_ps_with_exitcode(self, mock_time, mock_popen):
+        mock_time.sleep.return_value = None # remove sleep function
+        mock_popen.Popen = mock.Mock() # redefine Popen object
+        task = spark.SparkStandaloneTask("123", logger=mock.Mock())
+        task.working_directory = None
+        task.async_launch()
+        task._current_ps().poll.return_value = None
+        task._current_ps().wait.return_value = None
+        task.cancel()
+        self.assertEqual(task._current_status(), scheduler.TASK_FINISHED)
+        self.assertEqual(task.exit_code, None)
+        task._current_ps().terminate.assert_called_with()
+        task._current_ps().kill.assert_called_with()
+
+    @mock.patch("src.spark.subprocess")
+    @mock.patch("src.spark.can_submit_task")
+    @mock.patch("src.spark.time")
+    def test_status(self, mock_time, mock_can_submit, mock_popen):
+        mock_time.sleep.return_value = None # removed sleep function
+        mock_popen.Popen = mock.Mock() # redefine Popen object
+        task = spark.SparkStandaloneTask("123", logger=mock.Mock())
+        task.working_directory = None
+        # no tasks can run on cluster
+        mock_can_submit.return_value = False
+        self.assertEqual(task.status(), scheduler.TASK_BLOCKED)
+        # can launch task
+        mock_can_submit.return_value = True
+        self.assertEqual(task.status(), scheduler.TASK_PENDING)
+        # pending status does not trigger any action itself
+        self.assertEqual(task.status(), scheduler.TASK_PENDING)
+        # launch task, this should change statut to running, we maintain no return code
+        task.async_launch()
+        task._current_ps().poll.return_value = None
+        self.assertEqual(task.status(), scheduler.TASK_RUNNING)
+        # change poll method to return exit code
+        task._current_ps().poll.return_value = 127
+        self.assertEqual(task.status(), scheduler.TASK_FINISHED)
+        self.assertEqual(task.exit_code, 127)
+        # finished task should not change status
+        self.assertEqual(task.status(), scheduler.TASK_FINISHED)
+# pylint: enable=W0212,protected-access
 
 # Load test suites
 def suites():
