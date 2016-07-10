@@ -16,7 +16,7 @@ class SimpleTask(scheduler.Task):
         self.blocktime = blocktime
         self.runtime = runtime
         self._exit_code = None
-        self._status = self.BLOCKED
+        self._status = scheduler.TASK_BLOCKED
 
     @property
     def priority(self):
@@ -31,24 +31,24 @@ class SimpleTask(scheduler.Task):
         return self._exit_code
 
     def status(self):
-        if self._status == self.BLOCKED:
+        if self._status == scheduler.TASK_BLOCKED:
             if self.blocktime <= 0:
-                self._status = self.PENDING
+                self._status = scheduler.TASK_PENDING
             else:
                 self.blocktime -= 1
-        elif self._status == self.RUNNING:
+        elif self._status == scheduler.TASK_RUNNING:
             if self.runtime <= 0:
-                self._status = self.FINISHED
+                self._status = scheduler.TASK_FINISHED
                 self._exit_code = 0
             else:
                 self.runtime -= 1
         return self._status
 
     def async_launch(self):
-        self._status = self.RUNNING
+        self._status = scheduler.TASK_RUNNING
 
     def cancel(self):
-        self._status = self.FINISHED
+        self._status = scheduler.TASK_FINISHED
         self._exit_code = -1
 
 class Scenario(object):

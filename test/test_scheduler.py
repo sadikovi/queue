@@ -60,10 +60,10 @@ class TaskSuite(unittest.TestCase):
             self.task.status()
 
     def test_status_const(self):
-        self.assertEqual(self.task.BLOCKED, "BLOCKED")
-        self.assertEqual(self.task.PENDING, "PENDING")
-        self.assertEqual(self.task.RUNNING, "RUNNING")
-        self.assertEqual(self.task.FINISHED, "FINISHED")
+        self.assertEqual(scheduler.TASK_BLOCKED, "BLOCKED")
+        self.assertEqual(scheduler.TASK_PENDING, "PENDING")
+        self.assertEqual(scheduler.TASK_RUNNING, "RUNNING")
+        self.assertEqual(scheduler.TASK_FINISHED, "FINISHED")
 
     def test_async_launch(self):
         with self.assertRaises(NotImplementedError):
@@ -180,7 +180,7 @@ class ExecutorSuite(unittest.TestCase):
 
     def test_process_task_blocked(self):
         self.mock_task.uid = "123"
-        self.mock_task.status.return_value = scheduler.Task.BLOCKED
+        self.mock_task.status.return_value = scheduler.TASK_BLOCKED
         # test when active task is blocked
         exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock.Mock())
         exc.active_task = self.mock_task
@@ -189,7 +189,7 @@ class ExecutorSuite(unittest.TestCase):
 
     def test_process_task_pending(self):
         self.mock_task.uid = "123"
-        self.mock_task.status.return_value = scheduler.Task.PENDING
+        self.mock_task.status.return_value = scheduler.TASK_PENDING
         exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock.Mock())
         exc.active_task = self.mock_task
         self.assertEqual(exc._process_task(), None)
@@ -201,14 +201,14 @@ class ExecutorSuite(unittest.TestCase):
 
     def test_process_task_running(self):
         self.mock_task.uid = "123"
-        self.mock_task.status.return_value = scheduler.Task.RUNNING
+        self.mock_task.status.return_value = scheduler.TASK_RUNNING
         exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock.Mock())
         exc.active_task = self.mock_task
         self.assertEqual(exc._process_task(), None)
 
     def test_process_task_finished(self):
         self.mock_task.uid = "123"
-        self.mock_task.status.return_value = scheduler.Task.FINISHED
+        self.mock_task.status.return_value = scheduler.TASK_FINISHED
         self.mock_task.exit_code = 1
         exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=mock.Mock())
         exc.active_task = self.mock_task
@@ -310,7 +310,7 @@ class Atask(scheduler.Task):
     def exit_code(self):
         return 1
     def status(self):
-        return scheduler.Task.BLOCKED
+        return scheduler.TASK_BLOCKED
     def async_launch(self):
         return None
     def cancel(self):

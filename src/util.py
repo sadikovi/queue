@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import logging
 import os
 import urlparse
 
@@ -127,3 +128,20 @@ class URI(object):
     @property
     def alias(self):
         return self._alias if self._alias else self._url
+
+# == Logging related methods and classes ==
+def get_default_logger(name):
+    """
+    Internal method to set default logger. Should be moved into utility functions or unified
+    package instead. Creates logger for name provided.
+
+    :param name: logger name
+    :return: default logger
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    form = logging.Formatter("LOG :: %(asctime)s :: %(name)s :: %(levelname)s :: %(message)s")
+    stderr = logging.StreamHandler()
+    stderr.setFormatter(form)
+    logger.addHandler(stderr)
+    return logger

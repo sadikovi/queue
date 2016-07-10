@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
-import logging
 import multiprocessing
 import Queue as threadqueue
 import threading
 import time
 import src.const as const
+import src.util as util
 
 class Message(object):
     """
@@ -34,6 +34,15 @@ MESSAGE_TASK_CANCEL = "TASK_CANCEL"
 MESSAGE_TASK_STARTED = "TASK_STARTED"
 MESSAGE_TASK_FINISHED = "TASK_FINISHED"
 MESSAGE_TASK_CANCELLED = "TASK_CANCELLED"
+# == Task statuses ==
+# Task is blocked, e.g. by backend availability, will not be scheduled until resolved
+TASK_BLOCKED = "BLOCKED"
+# Task is pending, next after BLOCKED status, meaning good to launch
+TASK_PENDING = "PENDING"
+# Task is running on backend
+TASK_RUNNING = "RUNNING"
+# Task is finished, either failed or succeeded, which is determined by exit code
+TASK_FINISHED = "FINISHED"
 
 class TerminationException(Exception):
     """
@@ -55,16 +64,6 @@ class Task(object):
     Also each task must overwrite property for a unique identifier, and exit_code to return status
     of finished task.
     """
-
-    # == Task statuses ==
-    # Task is blocked, e.g. by backend availability, will not be scheduled until resolved
-    BLOCKED = "BLOCKED"
-    # Task is pending, next after BLOCKED status, meaning good to launch
-    PENDING = "PENDING"
-    # Task is running on backend
-    RUNNING = "RUNNING"
-    # Task is finished, either failed or succeeded, which is determined by exit code
-    FINISHED = "FINISHED"
 
     @property
     def uid(self):
@@ -135,7 +134,7 @@ class Executor(multiprocessing.Process):
             self.logger = logger
         else:
             log_name = "%s[%s]" % (type(self).__name__, self.name)
-            self.logger = self._get_default_logger(log_name)
+            self.logger = util.get_default_logger(log_name)
         # we also keep reference to active task, this will be reassigned for every iteration
         self.active_task = None
         # list of task ids to cancel, we add new task_id when specific message arrives and remove
@@ -144,22 +143,6 @@ class Executor(multiprocessing.Process):
         # flag to indicate if executor is terminated
         self._terminated = False
         super(Executor, self).__init__(name=name)
-
-    def _get_default_logger(self, name):
-        """
-        Internal method to set default logger. Should be moved into utility functions or unified
-        package instead. Creates logger for name provided.
-
-        :param name: logger name
-        :return: default logger
-        """
-        logger = logging.getLogger(name)
-        logger.setLevel(logging.DEBUG)
-        form = logging.Formatter("LOG :: %(asctime)s :: %(name)s :: %(levelname)s :: %(message)s")
-        stderr = logging.StreamHandler()
-        stderr.setFormatter(form)
-        logger.addHandler(stderr)
-        return logger
 
     def iteration(self):
         """
@@ -255,16 +238,16 @@ class Executor(multiprocessing.Process):
             if task_id in self.cancel_task_ids:
                 self._cancel_task()
                 self.cancel_task_ids.discard(task_id)
-            elif status == Task.PENDING:
+            elif status == TASK_PENDING:
                 # now we need to launch it and log action, note that launch should be asynchronous
                 self.active_task.async_launch()
                 self.conn.send(Message(MESSAGE_TASK_STARTED, task_id=task_id))
                 self.logger.info("Started task %s", task_id)
                 exit_code = None
-            elif status == Task.RUNNING:
+            elif status == TASK_RUNNING:
                 # task is running, nothing we can do, but wait
                 exit_code = None
-            elif status == Task.FINISHED:
+            elif status == TASK_FINISHED:
                 exit_code = self.active_task.exit_code
                 self.conn.send(Message(MESSAGE_TASK_FINISHED, task_id=task_id, exit_code=exit_code))
                 self.logger.info("Finished task %s, exit_code=%s", task_id, exit_code)
