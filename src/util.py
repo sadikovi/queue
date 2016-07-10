@@ -16,6 +16,8 @@ def _resolve_path(unresolved_path, dir_expected, permissions):
     :param permissions: list of expected permissions, e.g. [os.R_OK, os.W_OK]
     :return: fully resolved absolute path with checked permissions
     """
+    if not unresolved_path:
+        raise ValueError("Expected path, got %s" % unresolved_path)
     normpath = os.path.realpath(os.path.abspath(unresolved_path))
     # check if path is a valid directory or valid file
     if dir_expected and not os.path.isdir(normpath):

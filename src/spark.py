@@ -4,32 +4,212 @@ import json
 import re
 import types
 import urllib2
-import uuid
-import src.const as const
-import src.undersystem as undersystem
+import src.scheduler as scheduler
 import src.util as util
 
-class SparkSubmissionRequest(undersystem.SubmissionRequest):
-    """
-    Spark submission request is low-level representation of Spark job with some extra handling of
-    file system, and pinging job to retrieve status.
-    """
-    def __init__(self, spark_code, working_directory, spark_submit, name, master_url, spark_options,
-                 main_class, jar, job_options):
-        # interface code
-        self.spark_code = spark_code
-        # normalize path and check on existence, also check we have read-write access to the folder
-        self.working_directory = util.readwriteDirectory(working_directory)
-        # build command from options, for now just assign them
-        self.spark_submit = spark_submit
-        self.name = name
-        self.master_url = master_url
-        self.spark_options = spark_options
-        self.main_class = main_class
-        self.jar = jar
-        self.job_options = job_options
+# Class to hold all Spark standalone cluster related functionality, including methods to validate
+# different aspects of submission, launching process and system status.
 
-    def _shell(self):
+# == General functionality ==
+# Undersystem code for Spark
+SPARK_SYSTEM_CODE = "SPARK"
+# Default spark-submit
+SPARK_SUBMIT = "spark-submit"
+# Default Spark master url
+SPARK_MASTER_URL = "spark://master:7077"
+# Default Spark web (REST) url
+SPARK_WEB_URL = "http://localhost:8080"
+# Default application name
+SPARK_APP_NAME = "SPARK QUEUE APP"
+
+def applications(uri):
+    """
+    Fetch applications for Spark REST url. This method returns list of dict object, each of
+    them contains "id", "name", and "completed" status of a job. If URL is invalid or Spark
+    cluster cannot be reached, None is returned.
+
+    :param uri: Spark REST url, e.g. http://localhost:8080 (all), or http://localhost:4040 (active)
+    :return: list of Spark applications as dict objects
+    """
+    try:
+        # perform request with timeout of 30 seconds
+        fileobject = urllib2.urlopen("%s/api/v1/applications" % uri, timeout=30)
+    except StandardError:
+        return None
+    else:
+        # when requested, Spark returns list of jobs
+        apps = json.loads(fileobject.read())
+        parsed = []
+        for app in apps:
+            if "id" in app and "name" in app and "attempts" in app:
+                completed = True
+                for attempt in app["attempts"]:
+                    completed = completed and attempt["completed"]
+                parsed.append({"id": app["id"], "name": app["name"], "completed": completed})
+        return parsed
+
+# == Validation ==
+def validate_spark_options(value):
+    """
+    Validate Spark options, must be a dictionary where key as a name of option, and value is
+    option's value as string. If option name does not start with "spark.", it is ignored.
+    Raises error, if value is not a dictionary; non-string value is converted into string.
+
+    :param value: raw value to process
+    :return: validated Spark options as dictionary
+    """
+    if not isinstance(value, types.DictType):
+        raise TypeError("Expected dictionary of Spark options, got '%s'" % value)
+    temp_buffer = {}
+    for maybe_key, maybe_value in value.items():
+        tkey = str(maybe_key).strip()
+        tvalue = str(maybe_value).strip()
+        if tkey.startswith("spark."):
+            temp_buffer[tkey] = tvalue
+    return temp_buffer
+
+def validate_job_options(value):
+    """
+    Validate job options, must be a list of string values, though non-string values are
+    converted to strings, if type is invalid, raises error.
+
+    :param value: raw value to process
+    :return: validated job options as list of strings
+    """
+    if not isinstance(value, types.ListType):
+        raise TypeError("Expected list of job options, got '%s'" % value)
+    return [str(x) for x in value]
+
+def validate_main_class(value):
+    """
+    Validate main class syntax, must have "." separated word boundaries. Raises error if name
+    does not confirm to pattern or is None.
+
+    :param value: raw value to process
+    :return: validated main class name
+    """
+    if not value:
+        raise ValueError("Invalid main class as None, expected package?.Class")
+    groups = re.match(r"^(\w+)(\.\w+)*$", value.strip())
+    if not groups:
+        raise ValueError("Invalid main class syntax '%s', expected package?.Class" % value)
+    return groups.group(0)
+
+class SparkStandaloneTask(scheduler.Task):
+    """
+    Special task to process Spark submission for standalone cluster manager. Essentially creates
+    spark-submit command and executes it.
+    """
+    def __init__(self, uid, logger=None):
+        """
+        Create new instance of Spark standalone task. Most of the options are set to default
+        values. Use different setters to adjust parameters.
+
+        :param uid: unique identifier for a task
+        """
+        # == Task options ==
+        # Unique task identifier
+        self.__uid = uid
+        # Internal task status (task is always blocked at the start)
+        self.__status = scheduler.TASK_BLOCKED
+        # Task logger
+        logger_name = "%s[%s]" % (type(self).__name__, self.__uid)
+        self.logger = util.get_default_logger(logger_name) if not logger else logger
+        # == Spark cluster related options ==
+        # Define how to connect and retrieve cluster information
+        self._spark_submit = SPARK_SUBMIT
+        self._master_url = SPARK_MASTER_URL
+        self._web_url = SPARK_WEB_URL
+        # Shell process options (process, exit code, working directory for output streams)
+        self.__ps = None
+        self.__returncode = None
+        self.__working_directory = None
+        # == Spark application options ==
+        self.name = SPARK_APP_NAME
+        self.spark_options = {}
+        self.main_class = None
+        self.jar = None
+        self.job_options = []
+
+    @property
+    def uid(self):
+        return self.__uid
+
+    @property
+    def exit_code(self):
+        return self.__returncode
+
+    # == Get and set for Spark cluster related options ==
+    @property
+    def spark_submit(self):
+        """
+        Get current path to spark-submit or default global value.
+
+        :return: spark-submit executable
+        """
+        return self._spark_submit
+
+    @spark_submit.setter
+    def spark_submit(self, value):
+        """
+        Set spark-submit, must be path to the executable, or default value.
+
+        :param value: new spark-submit path or default value
+        """
+        if value == SPARK_SUBMIT:
+            self._spark_submit = value
+        else:
+            self._spark_submit = util.readonlyFile(value)
+
+    @property
+    def master_url(self):
+        """
+        Return Spark master url.
+
+        :return: current master url
+        """
+        return self._master_url
+
+    @master_url.setter
+    def master_url(self, value):
+        """
+        Set Spark master url, must have format spark://host:port.
+
+        :param value: new master url
+        """
+        uri = util.URI(value)
+        if uri.scheme != "spark":
+            raise ValueError("Expected scheme to be 'spark' for master url: %s" % value)
+        self._master_url = uri.url
+
+    @property
+    def web_url(self):
+        """
+        Return current Spark web url.
+
+        :return: Spark web (REST) url
+        """
+        return self._web_url
+
+    @web_url.setter
+    def web_url(self, value):
+        """
+        Set Spark web url, must have format http://host:port.
+
+        :param value: new web url
+        """
+        self._web_url = util.URI(value).url
+
+    # == Shell process methods
+    @property
+    def working_directory(self):
+        return self.__working_directory
+
+    @working_directory.setter
+    def working_directory(self, value):
+        self.__working_directory = util.readwriteDirectory(value)
+
+    def cmd(self):
         """
         Construct shell command to execute Spark submit, must preserve certain order of components:
         'path/to/spark-submit', 'name', 'master-url', 'spark-options', 'main-class', 'path/to/jar',
@@ -41,268 +221,44 @@ class SparkSubmissionRequest(undersystem.SubmissionRequest):
         # each Spark option starts with "--conf"
         pairs = [["--conf", "%s=%s" % (key, value)] for key, value in self.spark_options.items()]
         command = \
-            [str(self.spark_submit)] + \
+            [str(self._spark_submit)] + \
+            ["--master", str(self._master_url)] + \
             ["--name", str(self.name)] + \
-            ["--master", str(self.master_url)] + \
             [conf for pair in pairs for conf in pair] + \
             ["--class", str(self.main_class)] + \
             [str(self.jar)] + \
             self.job_options
         return command
 
-    def workingDirectory(self):
+    # == Set application options ==
+    def set_application(self, **kwargs):
         """
-        Get unique working directory for request.
+        Set application parameters: name, main class, options, etc. Currently supported keys:
+        - 'name' name of Spark application
+        - 'main_class' main entrypoint (fully qualified class name) to run
+        - 'jar' fully resolved path to a jar file
+        - 'spark_options' dictionary of Spark options, e.g. spark.executor.memory
+        - 'job_options' specific application (job) options
 
-        :return: working directory for request
+        :param kwargs: application options as dictionary
         """
-        return self.working_directory
+        for key, value in kwargs.items():
+            if key == "name":
+                self.name = str(value)
+            if key == "main_class":
+                self.main_class = validate_main_class(value)
+            if key == "jar":
+                self.jar = util.readonlyFile(value)
+            if key == "spark_options":
+                self.spark_options = validate_spark_options(value)
+            if key == "job_options":
+                self.job_options = validate_job_options(value)
 
-    def interfaceCode(self):
-        """
-        Spark backend's unique identifier.
+    def async_launch(self):
+        pass
 
-        :return: SparkBackend code
-        """
-        return self.spark_code
-
-    def dispatch(self):
-        raise NotImplementedError()
-
-    def ping(self):
-        raise NotImplementedError()
-
-    def close(self):
-        raise NotImplementedError()
-
-class SparkBackend(undersystem.UnderSystemInterface):
-    """
-    Spark Backend as implementation of UnderSystemInterface. Provides access to check status and
-    whether or not job can be submitted.
-    """
-    def __init__(self, master_url, rest_url, num_slots, working_directory, spark_home=None):
-        """
-        Create instance of Spark backend.
-
-        :param master_url: Spark Master URL, e.g. spark://sandbox:7077
-        :param rest_url: Spark UI (REST) URL, normally it is http://localhost:8080
-        :param num_slots: number of slots available for submission, i.e. number of concurrent jobs
-        :param working_directory: working directory root, each job has a subdirectory under root
-        :param spark_home: SPARK_HOME directory if provided, defaults to None
-        """
-        self.master_url = util.URI(master_url)
-        if self.master_url.scheme != "spark":
-            raise StandardError("Expected 'spark' scheme for url %s", self.master_url.url)
-        self.rest_url = util.URI(rest_url, "Spark UI")
-        self.num_slots = int(num_slots)
-        self.working_directory = util.readwriteDirectory(working_directory)
-        self.spark_home = util.readonlyDirectory(spark_home) if spark_home else None
-
-    @property
-    def spark_submit(self):
-        """
-        Return resolved spark-submit link. If `spark_home` is defined, we reconstruct path to the
-        actual executable, otherwise we assume that `spark-submit` is globally available.
-
-        :return: path to executable 'spark-submit' or globally defined script path
-        """
-        if self.spark_home:
-            return util.concat(self.spark_home, "bin", "spark-submit")
-        else:
-            return "spark-submit"
-
-    def _applications(self, uri):
-        """
-        Fetch applications for Spark REST url. This method returns list of dict object, each of
-        them contains "id", "name", and "completed" status of a job. If URL is invalid or Spark
-        cluster cannot be reached, None is returned.
-
-        :param uri: Spark REST url
-        :return: list of Spark applications as dict objects
-        """
-        try:
-            # perform request with timeout of 30 seconds
-            fileobject = urllib2.urlopen("%s/api/v1/applications" % uri, timeout=30)
-        except StandardError:
-            return None
-        else:
-            # when requested, Spark returns list of jobs
-            apps = json.loads(fileobject.read())
-            parsed = []
-            for app in apps:
-                if "id" in app and "name" in app and "attempts" in app:
-                    completed = True
-                    for attempt in app["attempts"]:
-                        completed = completed and attempt["completed"]
-                    parsed.append({"id": app["id"], "name": app["name"], "completed": completed})
-            return parsed
-
-    def name(self):
-        """
-        Name for Spark cluster.
-
-        :return: Spark cluster alias
-        """
-        return "Spark cluster"
-
-    def code(self):
-        """
-        Code identifier for Spark backend.
-
-        :return: Spark unique identifier
-        """
-        return "SPARK"
-
-    def link(self):
-        """
-        Return link for Spark UI.
-
-        :return: uri for Spark UI
-        """
-        return self.rest_url
-
-    def can_create_request(self):
-        """
-        Whether or not Spark can submit a job. This is valid operation, if status is either
-        SYSTEM_AVAILABLE or SYSTEM_BUSY, and number of slots are greater than number of running
-        applications.
-
-        :return: True if Spark can submit job, False otherwise
-        """
-        apps = self._applications(self.rest_url)
-        if apps is None:
-            return False
-        running = [x for x in apps if not x["completed"]]
-        return len(running) < self.num_slots
+    def cancel(self):
+        pass
 
     def status(self):
-        """
-        Status of Spark cluster, based on `applications()` method. If all applications are
-        completed, we say that cluster is available, as nothing is running. If at least one
-        application is running - cluster is busy, in any other cases - cluster is unavailable.
-
-        :return: status as one of SYSTEM_AVAILABLE, SYSTEM_BUSY, SYSTEM_UNAVAILABLE
-        """
-        apps = self._applications(self.rest_url)
-        if apps is None:
-            return const.SYSTEM_UNAVAILABLE
-        running = [x for x in apps if not x["completed"]]
-        return const.SYSTEM_BUSY if running else const.SYSTEM_AVAILABLE
-
-    def request(self, **kwargs):
-        """
-        Create new SparkSubmissionRequest based on options passed. This will create unique job
-        directory for submission request or parse existing one, if available, parse Spark and job
-        specific options. Backend expects object like this as kwargs:
-        ```
-        {
-            "working_directory": "/tmp/work/123",
-            "name": "Spark job name",
-            "spark_options": {
-                "spark.sql.shuffle.partitions": "200",
-                "spark.driver.memory": "10g",
-                "spark.executor.memory": "10g"
-                ...
-            },
-            "job_options": ["a", "b", "c", ...],
-            "main_class": "com.github.sadikovi.Test",
-            "jar": "/path/to/jar/file"
-        }
-        ```
-        Note that `working_directory` is optional, and if not provided we create it using Spark
-        backend working directory.
-
-        :param **kwargs: method attributes for extracting Spark options
-        :return: Spark submission request
-        """
-        # Keys to search in kwargs:
-        # - spark job name
-        name = None
-        # - spark options in format {"spark.x.y": "z"}
-        spark_options = None
-        # - job options as list of strings ["a", "b", "c"]
-        job_options = None
-        # - fully qualified main class name including package
-        main_class = None
-        # - path to the jar file, must exist and have read access
-        jar = None
-        # - optional working directory, in case it is not specified, we create it
-        working_directory = None
-
-        # Check that dictionary has expected options set
-        if "name" not in kwargs:
-            raise KeyError("Spark job name key is not specified in %s" % kwargs)
-        if "spark_options" not in kwargs:
-            raise KeyError("Spark options key are not specified in %s" % kwargs)
-        if "job_options" not in kwargs:
-            raise KeyError("Job options key are not specified in %s" % kwargs)
-        if "main_class" not in kwargs:
-            raise KeyError("Main class key is not specified %s" % kwargs)
-        if "jar" not in kwargs:
-            raise KeyError("Jar key is not specified %s" % kwargs)
-
-        name = str(kwargs["name"]).strip()
-        spark_options = self.validateSparkOptions(kwargs["spark_options"])
-        job_options = self.validateJobOptions(kwargs["job_options"])
-        main_class = self.validateMainClass(kwargs["main_class"])
-        jar = util.readonlyFile(kwargs["jar"])
-        if "working_directory" in kwargs:
-            working_directory = kwargs["working_directory"]
-        else:
-            # generate unique directory for submission request
-            directory_suffix = uuid.uuid4().hex
-            working_directory = util.concat(self.working_directory, directory_suffix)
-            # we assume that request directory does not exist, otherwise it will raise OSError
-            util.mkdir(working_directory, 0774)
-        return SparkSubmissionRequest(self.code(), working_directory, self.spark_submit, name,
-                                      self.master_url.url, spark_options, main_class, jar,
-                                      job_options)
-
-    @staticmethod
-    def validateSparkOptions(value):
-        """
-        Validate Spark options, must be a dictionary where key as a name of option, and value is
-        option's value as string. If option name does not start with "spark.", it is ignored.
-        Raises error, if value is not a dictionary; non-string value is converted into string.
-
-        :param value: raw value to process
-        :return: validated Spark options as dictionary
-        """
-        if not isinstance(value, types.DictType):
-            raise TypeError("Expected dictionary of Spark options, got '%s'" % value)
-        temp_buffer = {}
-        for maybe_key, maybe_value in value.items():
-            tkey = str(maybe_key).strip()
-            tvalue = str(maybe_value).strip()
-            if tkey.startswith("spark."):
-                temp_buffer[tkey] = tvalue
-        return temp_buffer
-
-    @staticmethod
-    def validateJobOptions(value):
-        """
-        Validate job options, must be a list of string values, though non-string values are
-        converted to strings, if type is invalid, raises error.
-
-        :param value: raw value to process
-        :return: validated job options as list of strings
-        """
-        if not isinstance(value, types.ListType):
-            raise TypeError("Expected list of job options, got '%s'" % value)
-        return [str(x) for x in value]
-
-    @staticmethod
-    def validateMainClass(value):
-        """
-        Validate main class syntax, must have "." separated word boundaries. Raises error if name
-        does not confirm to pattern or is None.
-
-        :param value: raw value to process
-        :return: validated main class name
-        """
-        if not value:
-            raise ValueError("Invalid main class as None, expected package?.Class")
-        groups = re.match(r"^(\w+)(\.\w+)*$", value.strip())
-        if not groups:
-            raise ValueError("Invalid main class syntax '%s', expected package?.Class" % value)
-        return groups.group(0)
+        pass

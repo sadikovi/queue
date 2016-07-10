@@ -55,6 +55,17 @@ class UtilSuite(unittest.TestCase):
             util._resolve_path(".", dir_expected=True, permissions=[os.R_OK])
             # pylint: enable=W0212,protected-access
 
+    def test_resolve_path_fail_6(self):
+        # should fail when empty string or None are passed
+        with self.assertRaises(ValueError):
+            # pylint: disable=W0212,protected-access
+            util._resolve_path(None, dir_expected=False, permissions=[])
+            # pylint: enable=W0212,protected-access
+        with self.assertRaises(ValueError):
+            # pylint: disable=W0212,protected-access
+            util._resolve_path("", dir_expected=False, permissions=[])
+            # pylint: enable=W0212,protected-access
+
     @mock.patch("src.util.os")
     def test_resolve_path_empty_permissions(self, mock_os):
         mock_os.path.abspath.return_value = "/tmp/a"
