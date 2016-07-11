@@ -9,10 +9,12 @@ def addTests(tests):
     scheduler2_test = it_scheduler.Scheduler2IntegrationTest()
     scheduler3_test = it_scheduler.Scheduler3IntegrationTest()
     scheduler4_test = it_scheduler.Scheduler4IntegrationTest()
+    scheduler5_test = it_scheduler.Scheduler5IntegrationTest()
     tests.append(scheduler1_test)
     tests.append(scheduler2_test)
     tests.append(scheduler3_test)
     tests.append(scheduler4_test)
+    tests.append(scheduler5_test)
 
 def runTests(tests):
     for test in tests:

@@ -51,6 +51,28 @@ class SimpleTask(scheduler.Task):
         self._status = scheduler.TASK_FINISHED
         self._exit_code = -1
 
+class FailedTask(scheduler.Task):
+    @property
+    def priority(self):
+        return const.PRIORITY_1
+
+    @property
+    def uid(self):
+        return "123"
+
+    @property
+    def exit_code(self):
+        return -1
+
+    def status(self):
+        raise ValueError("Test")
+
+    def async_launch(self):
+        pass
+
+    def cancel(self):
+        pass
+
 class Scenario(object):
     def __init__(self, name, args):
         self._name = name
@@ -65,7 +87,7 @@ class Scenario(object):
                     sched.cancel(call[1])
             if isinstance(arg, types.IntType):
                 time.sleep(arg)
-            elif isinstance(arg, SimpleTask):
+            elif isinstance(arg, SimpleTask) or isinstance(arg, FailedTask):
                 sched.put(arg.priority, arg)
 
     @property
@@ -204,3 +226,31 @@ class Scheduler4IntegrationTest(abstract.IntegrationTest):
         assert messages[1].status == scheduler.MESSAGE_TASK_STARTED
         assert messages[2].status == scheduler.MESSAGE_TASK_FINISHED
         assert messages[2].arguments["task_id"] == "1"
+
+class Scheduler5IntegrationTest(abstract.IntegrationTest):
+    """
+    Test of 2 executors, launching 2 failed tasks. Both tasks will raise errors, and should be
+    reported as failed, but scheduler should continue running.
+    """
+    def setUp(self):
+        self._msg = []
+        self._sched = scheduler.Scheduler(2, timeout=1, logger=None)
+        self.scenario = Scenario("2-failed tasks", [
+            2,
+            FailedTask(),
+            FailedTask(),
+            2
+        ])
+
+    def get_msg(self, msg):
+        self._msg.append(msg)
+
+    def runTest(self):
+        self._sched.start_maintenance(polling_target=self.get_msg)
+        self._sched.start()
+        self.scenario.execute(self._sched)
+        self._sched.stop()
+        # check messages
+        print self._msg
+        messages = [x for arr in self._msg for x in arr if len(arr) == 1]
+        assert len(messages) == 0
