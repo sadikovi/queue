@@ -1,11 +1,82 @@
 #!/usr/bin/env python
 
+import inspect
 import multiprocessing
 import Queue as threadqueue
 import threading
 import time
 import src.const as const
 import src.util as util
+
+# == Task statuses ==
+# Task is pending, ready to execute block
+TASK_PENDING = "PENDING"
+# Task is started and running on backend
+TASK_STARTED = "STARTED"
+# Task is cancelled
+TASK_CANCELLED = "CANCELLED"
+# Task is succeeded
+TASK_SUCCEEDED = "SUCCEEDED"
+# Task is failed to execute
+TASK_FAILED = "FAILED"
+
+# == Message statuses ==
+# Action requests for executor
+EXECUTOR_SHUTDOWN = "EXECUTOR_SHUTDOWN"
+EXECUTOR_CANCEL_TASK = "EXECUTOR_CANCEL_TASK"
+# Statuses of actions taken by executor (events of task execution)
+EXECUTOR_TASK_STARTED = "EXECUTOR_TASK_STARTED"
+EXECUTOR_TASK_SUCCEEDED = "EXECUTOR_TASK_SUCCEEDED"
+EXECUTOR_TASK_FAILED = "EXECUTOR_TASK_FAILED"
+EXECUTOR_TASK_CANCELLED = "EXECUTOR_TASK_CANCELLED"
+
+class Block(object):
+    """
+    Block class is a public API on creating executable code within scheduler Task. Must be
+    serializable, and must implement methods:
+    - run()
+    - cancel()
+    Block defines the running code for unit of execution, note that it is assumed to be blocking,
+    though should handle asynchronous calls of `cancel()` method.
+    """
+    def run(self):
+        """
+        Main method within Block code executes. This method should block and wait for it to
+        complete. Example might be a polling status of the running process. Any failures can result
+        in exception, it is recommended to rather fail instead of silencing exception, because
+        Task will capture failure and return correct status for code block.
+        """
+        raise NotImplementedError("Not implemented")
+
+    def cancel(self):
+        """
+        Cancel currently running block. This should shut down main process in `run()`, though this
+        operation will run after task is cancelled, so it is not going to block task process, since
+        task will exit before shutdown. Note that it is important that Block provides this method,
+        otherwise task will be cancelled without terminating actual process.
+        """
+        raise NotImplementedError("Not implemented")
+
+class InterruptedException(Exception):
+    """
+    Base class for interrupted exceptions, these errors are only raised when either task or
+    executor are asked to terminate, in case of task it will be cancellation. Note that this only
+    covers expected or scheduled failures, any other exceptions are thrown without wrapping into
+    InterruptedException.
+    """
+    pass
+
+class TaskInterruptedException(InterruptedException):
+    """
+    Interrupted exception for task, thrown when task is cancelled.
+    """
+    pass
+
+class ExecutorInterruptedException(InterruptedException):
+    """
+    Interrupted exception for executor, thrown when executor is requested to shut down.
+    """
+    pass
 
 class Message(object):
     """
@@ -26,94 +97,199 @@ class Message(object):
     def __repr__(self):
         return self.pretty_name
 
-# Set of messages for executors
-MESSAGE_EXECUTOR_SHUTDOWN = "EXECUTOR_SHUTDOWN"
-# Message to cancel task
-MESSAGE_TASK_CANCEL = "TASK_CANCEL"
-# Message received from executors with task status
-MESSAGE_TASK_STARTED = "TASK_STARTED"
-MESSAGE_TASK_FINISHED = "TASK_FINISHED"
-MESSAGE_TASK_CANCELLED = "TASK_CANCELLED"
-# == Task statuses ==
-# Task is blocked, e.g. by backend availability, will not be scheduled until resolved
-TASK_BLOCKED = "BLOCKED"
-# Task is pending, next after BLOCKED status, meaning good to launch
-TASK_PENDING = "PENDING"
-# Task is running on backend
-TASK_RUNNING = "RUNNING"
-# Task is finished, either failed or succeeded, which is determined by exit code
-TASK_FINISHED = "FINISHED"
+class WorkerThread(threading.Thread):
+    """
+    Non-daemon thread to execute Block instance. Any exception is captured and sent back to a task.
+    Communication with the task goes through message queue, which is created before launching
+    thread.
+    """
+    def __init__(self, block, msg_queue):
+        """
+        Create new instance of WorkerThread.
 
-class TerminationException(Exception):
-    """
-    Custom exception for executor termination or any other valid termination.
-    """
-    def __init__(self, message=None):
-        msg = message if message else "Requested termination"
-        super(TerminationException, self).__init__(msg)
+        :param block: Block instance to run
+        :param msg_queue: message queue, mainly to store error messages
+        """
+        super(WorkerThread, self).__init__()
+        self._block = block
+        self._msg_queue = msg_queue
 
-class Task(object):
-    """
-    Task is a unit of execution in scheduler, all backends should implement this interface for
-    their execution requests, so they can be launched on executor. Note that some methods might
-    require availability status of backend. Main task API consists of several methods:
-    - status()
-    - async_launch()
-    - cancel()
+    def run(self):
+        # pylint: disable=W0703,broad-except
+        try:
+            self._block.run()
+        except Exception as e:
+            self.msg_queue.put_nowait(e)
+        # pylint: enable=W0703,broad-except
 
-    Also each task must overwrite property for a unique identifier, and exit_code to return status
-    of finished task.
+    def cancel(self):
+        self._block.cancel()
+
+class Task(threading.Thread):
     """
+    Task is a unit of execution. Should be pickle-able. Essentially a daemon thread that spawns
+    another worker thread to execute block. Life cycle of the task is reflected in set of statuses:
+    TASK_PENDING -> TASK_STARTED -> TASK_FAILED/TASK_SUCCEEDED
+                                 -> TASK_CANCELLED
+    When task is created it is assigned TASK_PENDING status, TASK_STARTED is assigned when task is
+    launched, we also start collecting metrics, TASK_FAILED/TASK_SUCCEEDED is returned when worker
+    thread is finished; if there is any message in msg_queue as an exception, task is considered
+    failed, otherwise succeeded. Task can also be cancelled during execution. Note that task does
+    not guarantee that worker thread will exit correctly, this depends on Block implementation.
+    """
+    def __init__(self, uid, block=None, logger=None):
+        """
+        Create new instance of Task. If block is not provided task is considered empty, note that
+        code block must be serializable with pickle or None.
+
+        :param uid: unique identifier for task
+        :param block: code to execute for this task, can be None
+        :param logger: available logger function, uses default if None
+        """
+        super(Task, self).__init__()
+        # task is by definition a daemon thread
+        self.daemon = True
+        # refresh timeout for worker thread
+        self.refresh_timeout = 0.5
+        if block is not None and not isinstance(block, Block):
+            raise AttributeError("Invalid block provided: %s" % block)
+        self.__uid = uid
+        self.__block = block
+        self.__metrics = {}
+        self.__status = TASK_PENDING
+        # setting up logger
+        self.name = "%s[%s]" % (type(self).__name__, self.__uid)
+        self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
+        # different work statuses
+        self.__cancel = threading.Event()
+        # callbacks
+        # .. note:: DeveloperApi
+        self.on_task_start = None
+        self.on_task_cancel = None
+        self.on_task_succeeded = None
+        self.on_task_failed = None
 
     @property
     def uid(self):
         """
-        Return unique identifier for this task, it is recommended to be globally unique.
+        Get unique identifier.
 
-        :return: unique identifier
+        :return: unique identifier for this task
         """
-        raise NotImplementedError()
+        return self.__uid
 
     @property
-    def exit_code(self):
-        """
-        Return exit code (status) of the task. If task has not been launched or running, should
-        return None, and return valid status in case it was finished or terminated.
-
-        :return: exit code
-        """
-        raise NotImplementedError()
-
     def status(self):
         """
-        Return current status of the task. Should take into account backend availability, state of
-        the resources allocated, or background process running.
+        Get current task status.
 
-        :return: enum status of the task (see above)
+        :return: status for this task
         """
-        raise NotImplementedError()
+        return self.__status
 
-    def async_launch(self):
+    def _set_metric(self, name, value):
         """
-        Asynchronously launch task, because executor does not support launching tasks in a separate
-        thread yet. For example, spawning shell process in the background, etc.
+        Set metric value for name, this overwrites previous value.
+
+        :param name: name for metric
+        :param value: new value for metric
         """
-        raise NotImplementedError()
+        self.__metrics[name] = value
+
+    def _get_metric(self, name):
+        """
+        Get metric value for name, or None if name is not found.
+
+        :return: metric value or None in case of absent name
+        """
+        return self.__metrics[name] if name in self.__metrics else None
 
     def cancel(self):
         """
-        Cancel task, this should ask termination of all background processes and close resources
-        associated with task. Can block thread to execute code, must set exit code for the task.
+        Cancel current thread and potentially running block.
         """
-        raise NotImplementedError()
+        self.logger.debug("Requested termination of task")
+        self.__cancel.set()
+
+    @property
+    def is_cancelled(self):
+        """
+        Return True, if thread is either cancelled, or has been requested to stop.
+
+        :return: True if cancel condition is triggered, False otherwise
+        """
+        return self.__cancel.is_set()
+
+    def _safe_exec(self, func, **kwargs):
+        """
+        Safely execute function with a list of arguments. Function is assumed not to return any
+        result.
+
+        :param func: function to execute
+        :param kwargs: dictionary of method parameters
+        """
+        # pylint: disable=W0703,broad-except
+        try:
+            if func:
+                func(**kwargs)
+        except Exception as e:
+            self.logger.debug("Failed to execute '%s(%s)', reason=%s", func, kwargs, e)
+        # pylint: enable=W0703,broad-except
+
+    def run(self):
+        # update task metrics and set status
+        self._set_metric("starttime", time.time())
+        self._set_metric("duration", 0)
+        self.__status = TASK_STARTED
+        # try launching listener callback, note that failure should not affect execution of task
+        self._safe_exec(self.on_task_start, uid=self.__uid)
+        self.logger.debug("Started, time=%s", self._get_metric("starttime"))
+        try:
+            msg_queue = threadqueue.Queue()
+            wprocess = WorkerThread(self.__block, msg_queue)
+            wprocess.start()
+            next_iteration = True
+            while next_iteration:
+                time.sleep(self.refresh_timeout)
+                if self.cancelled:
+                    wprocess.cancel()
+                    raise TaskInterruptedException()
+                if not wprocess.is_alive():
+                    next_iteration = False
+            wprocess.join()
+            if not msg_queue.empty():
+                # we only care about the first exception occuried
+                error = msg_queue.get_nowait()
+                raise error
+        except TaskInterruptedException:
+            # task has been cancelled or requested termination
+            self.__status = TASK_CANCELLED
+            self._safe_exec(self.on_task_cancel, uid=self.__uid)
+        # pylint: disable=W0703,broad-except
+        except Exception as e:
+            # any other exception is considered a failure
+            self._set_metric("reason", "%s" % e)
+            self.__status = TASK_FAILED
+            self._safe_exec(self.on_task_failed, uid=self.__uid, reason=self._get_metric("reason"))
+        # pylint: enable=W0703,broad-except
+        else:
+            self.__status = TASK_SUCCEEDED
+            self._safe_exec(self.on_task_succeeded, uid=self.__uid)
+        finally:
+            # set post-execution metrics for task
+            self._set_metric("endtime", time.time())
+            duration = self._get_metric("endtime") - self._get_metric("starttime")
+            self._set_metric("duration", duration)
+        self.logger.debug("Finished, status=%s, time=%s, duration=%s", self.__status,
+                          self._get_metric("endtime"), self._get_metric("duration"))
 
 class Executor(multiprocessing.Process):
     """
     Executor process to run tasks and receive messages from scheduler. It represents long running
-    process with polling interval, all communications are done through pipe. Executor guarantees
-    termination of task with termination of subprocess, assuming that task implements interface
-    correctly. Takes dictionary of task queues that are mapped to priorities, higher priority is
-    checked first.
+    daemon process with polling interval, all communications are done through pipe. Executor
+    guarantees termination of task with termination of subprocess, assuming that task implements
+    interface correctly. Takes dictionary of task queues that are mapped to priorities, higher
+    priority is checked first.
     """
     def __init__(self, name, conn, task_queue_map, timeout=0.5, logger=None):
         """
@@ -125,75 +301,39 @@ class Executor(multiprocessing.Process):
         :param timeout: polling interval
         :param logger: provided logger, if None then default logger is used
         """
-        self.name = name
+        super(Executor, self).__init__()
+        self.name = "%s[%s]" % (type(self).__name__, name)
+        self.daemon = True
         self.conn = conn
         self.task_queue_map = task_queue_map
         self.timeout = timeout
         # if no logger defined create new logger and add null handler
-        if logger:
-            self.logger = logger
-        else:
-            log_name = "%s[%s]" % (type(self).__name__, self.name)
-            self.logger = util.get_default_logger(log_name)
+        self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
         # we also keep reference to active task, this will be reassigned for every iteration
-        self.active_task = None
+        self._active_task = None
         # list of task ids to cancel, we add new task_id when specific message arrives and remove
         # task_id that has been removed
-        self.cancel_task_ids = set()
+        self._cancel_task_ids = set()
         # flag to indicate if executor is terminated
         self._terminated = False
-        super(Executor, self).__init__(name=name)
-
-    def iteration(self):
-        """
-        Run single iteration, entire logic of executor should be specified in this method, unless
-        there is an additional logic between iterations. Iteration is cancelled, if executor is
-        terminated.
-
-        :return: boolean flag, True - run next iteration, False - terminate
-        """
-        # we process special case of terminated executor in case someone would launch it again.
-        if self._terminated:
-            self.logger.warning("Executor has been terminated, iteration is cancelled")
-            return False
-        self.logger.debug("Run iteration for %s, timeout=%s", self.name, self.timeout)
-        try:
-            # check if there are any messages in connection
-            if self.conn.poll():
-                self._process_message(self.conn.recv())
-            # check if there is any outstanding task to run, otherwise poll data for current task
-            self._process_task()
-        except TerminationException:
-            self.logger.info("Requested termination of executor %s", self.name)
-            self._terminated = True
-            # If we encounter termination of executor, we should cancel current running task and
-            # set block launch of any other tasks
-            self._cancel_task()
-            return False
-        # pylint: disable=W0703,broad-except
-        except Exception as e:
-            self.logger.exception("Unrecoverable error %s, shutting down executor %s", e, self.name)
-            return False
-        # pylint: enable=W0703,broad-except
-        else:
-            return True
 
     def _process_message(self, msg):
         """
         Process message and take action, e.g. terminate process, execute callback, etc. Message
         types are defined above in the package. Note that this can take actions on tasks, e.g.
         when task is cancelled, so the subsequent processing of task, will work with updated state.
-
         :param msg: message to process
         """
         self.logger.debug("Received message %s", msg)
         if isinstance(msg, Message):
-            if msg.status == MESSAGE_EXECUTOR_SHUTDOWN: # pragma: no branch
-                raise TerminationException()
-            elif msg.status == MESSAGE_TASK_CANCEL: # pragma: no branch
+            if msg.status == EXECUTOR_SHUTDOWN: # pragma: no branch
+                raise ExecutorInterruptedException("Executor shutdown")
+            elif msg.status == EXECUTOR_CANCEL_TASK: # pragma: no branch
                 # update set of tasks to cancel
                 if "task_id" in msg.arguments:
-                    self.cancel_task_ids.add(msg.arguments["task_id"])
+                    task_id = msg.arguments["task_id"]
+                    self.cancel_task_ids.add(task_id)
+                    self.logger.debug("Registered cancelled task %s", task_id)
             else:
                 # valid but unrecognized message, no-op
                 pass
@@ -223,53 +363,107 @@ class Executor(multiprocessing.Process):
         Process individual task, returns exit code for each task following available API. One of
         the checks is performed to test current task_id against cancelled list, and discard task,
         if it has been marked as cancelled, or terminate running task.
-
-        :return: task exit code (see Task API), or None, if exit code is not resolved
         """
-        if not self.active_task:
-            self.active_task = self._get_new_task()
-        # At this point we check if we can actually launch task
-        exit_code = None
-        if self.active_task:
-            task_id = self.active_task.uid
-            status = self.active_task.status()
-            # before checking statuses and proceed execution, we check if current task was
-            # requested to be cancelled, if yes, we remove it from set of ids.
-            if task_id in self.cancel_task_ids:
-                self._cancel_task()
-                self.cancel_task_ids.discard(task_id)
-            elif status == TASK_PENDING:
-                # now we need to launch it and log action, note that launch should be asynchronous
-                self.active_task.async_launch()
-                self.conn.send(Message(MESSAGE_TASK_STARTED, task_id=task_id))
-                self.logger.info("Started task %s", task_id)
-                exit_code = None
-            elif status == TASK_RUNNING:
-                # task is running, nothing we can do, but wait
-                exit_code = None
-            elif status == TASK_FINISHED:
-                exit_code = self.active_task.exit_code
-                self.conn.send(Message(MESSAGE_TASK_FINISHED, task_id=task_id, exit_code=exit_code))
-                self.logger.info("Finished task %s, exit_code=%s", task_id, exit_code)
-                self.active_task = None
+        if not self._active_task:
+            self._active_task = self._get_new_task()
+        # before checking statuses and proceed execution, we check if current task was
+        # requested to be cancelled, if yes, we remove it from set of ids.
+        if self._active_task and self._active_task.uid in self._cancel_task_ids:
+            self._cancel_active_task()
+            self._cancel_task_ids.discard(self._active_task.uid)
+        # check general task processing
+        if self._active_task:
+            task_id = self._active_task.uid
+            task_status = self._active_task.status
+            # perform action based on active task status
+            if task_status is TASK_PENDING:
+                # check if external system is available to run task (Developer API)
+                if self.external_system_available():
+                    self._active_task.start()
+                    self.conn.send(Message(EXECUTOR_TASK_STARTED, task_id=task_id))
+                    self.logger.info("Started task %s", task_id)
+                else:
+                    self.logger.info("External system is not available, will try again later")
+            elif task_status is TASK_STARTED:
+                # task has started and running
+                if self._active_task.is_alive():
+                    self.logger.debug("Ping task %s is alive", task_id)
+            elif task_status is TASK_SUCCEEDED:
+                # task finished successfully
+                self.conn.send(Message(EXECUTOR_TASK_SUCCEEDED, task_id=task_id))
+                self.logger.info("Finished task %s, status %s", task_id, task_status)
+                self._active_task = None
+            elif task_status is TASK_FAILED:
+                # task failed
+                self.conn.send(Message(EXECUTOR_TASK_FAILED, task_id=task_id))
+                self.logger.info("Finished task %s, status %s", task_id, task_status)
+                self._active_task = None
+            elif task_status is TASK_CANCELLED:
+                # task has been cancelled
+                if not self._active_task:
+                    self.active_task = None
             else:
-                self.logger.info("Blocked task %s, ping under-system implementation", task_id)
-        # Return exit code obtained from if-else branches, note that if executor does not have any
-        # tasks to run, we return None similar to when task is running.
-        return exit_code
+                self.logger.warning("Unknown status %s for task %s", task_status, task_id)
+        else:
+            self.logger.debug("No active task registered")
 
-    def _cancel_task(self):
+    def _cancel_active_task(self):
         """
         Cancel current running task, if available.
         """
-        if self.active_task:
-            task_id = self.active_task.uid
-            self.active_task.cancel()
-            self.conn.send(Message(MESSAGE_TASK_CANCELLED, task_id=task_id))
+        if self._active_task:
+            task_id = self._active_task.uid
+            self._active_task.cancel()
+            self.conn.send(Message(EXECUTOR_TASK_CANCELLED, task_id=task_id))
             self.logger.info("Cancelled task %s", task_id)
-            self.active_task = None
+            self._active_task = None
         else:
-            self.logger.info("No active task to terminate")
+            self.logger.info("No active task to cancel")
+
+    def external_system_available(self):
+        """
+        .. note:: DeveloperApi
+
+        Can be overriden to check if external system is available to run task. This can include
+        system status, e.g. running, or system load, e.g. how many tasks are already queued up.
+
+        :return: True if system can run task, False otherwise
+        """
+        return True
+
+    def iteration(self):
+        """
+        Run single iteration, entire logic of executor should be specified in this method, unless
+        there is an additional logic between iterations. Iteration is cancelled, if executor is
+        terminated.
+
+        :return: boolean flag, True - run next iteration, False - terminate
+        """
+        # we process special case of terminated executor in case someone would launch it again.
+        if self._terminated:
+            self.logger.warning("Executor %s has been terminated", self.name)
+            return False
+        self.logger.debug("Run iteration for %s, timeout=%s", self.name, self.timeout)
+        try:
+            # check if there are any messages in connection, process one message per iteration
+            if self.conn.poll():
+                self._process_message(self.conn.recv())
+            # check if there is any outstanding task to run, otherwise poll data for current task
+            self._process_task()
+        except ExecutorInterruptedException:
+            self.logger.info("Requested termination of executor %s", self.name)
+            self._terminated = True
+            # cancel task that is currently running and clean up state
+            self._cancel_active_task()
+            return False
+        # pylint: disable=W0703,broad-except
+        except Exception as e:
+            self.logger.exception("Unrecoverable error %s, terminating executor %s", e, self.name)
+            self._terminated = True
+            return False
+        # pylint: enable=W0703,broad-except
+        else:
+            return True
 
     def run(self):
         """
@@ -298,9 +492,12 @@ class Scheduler(object):
         :param timeout: executor's timeout
         :param logger: executor's logger
         """
+        self.name = "%s" % type(self).__name__
         self.num_executors = int(num_executors)
         self.timeout = timeout
-        self.logger = logger
+        self.log_func = logger
+        self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
+
         # pipe connections to send and receive messages to/from executors
         self.pipe = {}
         # list of executors that are initialized
@@ -320,73 +517,79 @@ class Scheduler(object):
         :param name: executor's name
         :return: created executor (it is already added to the list of executors)
         """
-        main_conn, exec_conn = multiprocessing.Pipe()
-        exc = Executor(name, exec_conn, self.task_queue_map, timeout=self.timeout,
-                       logger=self.logger)
-        exc.daemon = True
+        main_conn, exc_conn = multiprocessing.Pipe()
+        clazz = self.executor_class()
+        if not inspect.isclass(clazz) or not issubclass(clazz, Executor):
+            raise TypeError("Type %s !<: Executor" % clazz)
+        exc = clazz(name, exc_conn, self.task_queue_map, timeout=self.timeout, logger=self.log_func)
         self.executors.append(exc)
         self.pipe[exc.name] = main_conn
         return exc
 
-    def _prepare_polling_thread(self, name, target=None):
+    def executor_class(self):
         """
-        Prepare maintenance thread for polling messages from Pipe. This returns None, when no
-        target consumer is provided.
+        .. note:: DeveloperApi
 
-        :param name: name of the polling thread
-        :param target: target function that should accept argument as list of messages, can be None
-        :return: created daemon thread or None, if target is not specified
+        Return executor class to launch. By default returns generic Executor implementation.
+
+        :return: scheduler.Executor subclass
         """
-        # Do not create any thread, if there is no target provided, because of saving resources
-        # on polling messages without consumer.
-        if not target:
-            return None
-        # Thread is considered to be long-lived, and is terminated when scheduler is stopped.
-        def poll_messages():
-            while True:
-                msg_list = []
-                # sometimes thread can report that pipe is None, which might require lock before
-                # processing, currently we just skip iteration, if it is None.
-                if self.pipe is not None:
-                    for conn in self.pipe.values():
-                        while conn.poll():
-                            msg_list.append(conn.recv())
-                target(msg_list)
-                time.sleep(self.timeout)
-        thread = threading.Thread(name=name, target=poll_messages)
-        thread.daemon = True
-        return thread
+        return Executor
 
     def start(self):
         """
         Start scheduler, launches executors asynchronously.
         """
+        self.logger.info("Starting %s '%s' executors", self.num_executors, self.executor_class())
         # Launch executors and save pipes per each
         for i in range(self.num_executors):
-            exc = self._prepare_executor("Executor-%s" % i)
+            exc = self._prepare_executor("#%s" % i)
             exc.start()
 
-    def start_maintenance(self, polling_target=None):
+    def stop(self):
         """
-        Start all maintenance threads and processes.
+        Stop scheduler, terminates executors, and all tasks that were running at the time.
         """
-        # Launch polling thread for messages
-        thread = self._prepare_polling_thread("Polling-1", target=polling_target)
-        if thread:
-            thread.start()
+        for conn in self.pipe.values():
+            conn.send(Message(EXECUTOR_SHUTDOWN))
+        # timeout to terminate processes and process remaining messages in Pipe by polling thread
+        self.logger.info("Waiting for termination...")
+        time.sleep(5)
+        for exc in self.executors:
+            if exc.is_alive():
+                exc.terminate()
+            exc.join()
+        self.logger.info("Terminated executors, cleaning up internal data")
+        self.pipe = None
+        self.executors = None
+        self.task_queue_map = None
 
-    def put(self, priority, task):
+    def _put(self, priority, task):
         """
-        Add task for priority.
+        Internal method to add task for priority.
 
         :param priority: priority of task, must be one of the const.PRIORITY_x
         :param task: task to add, must be instance of Task
+        :return: task uid
         """
         if priority not in self.task_queue_map:
             raise KeyError("No priority %s found in queue map" % priority)
         if not isinstance(task, Task):
             raise TypeError("%s != Task" % type(task))
-        self.task_queue_map[priority].put(task, block=False)
+        self.task_queue_map[priority].put_nowait(task)
+        return task.uid
+
+    def put(self, uid, priority, block):
+        """
+        Add block. This creates relevant Task with uid and schedules for priority specified.
+
+        :param uid: unique identifier for task
+        :param priority: priority to schedule (should be one of PRIORITIES)
+        :param block: block to execute
+        :return: task uid
+        """
+        task = Task(uid, block, self.log_func)
+        return self._put(priority, task)
 
     def cancel(self, task_id):
         """
@@ -398,20 +601,4 @@ class Scheduler(object):
         """
         if task_id:
             for conn in self.pipe.values():
-                conn.send(Message(MESSAGE_TASK_CANCEL, task_id=task_id))
-
-    def stop(self):
-        """
-        Stop scheduler, terminates executors, and all tasks that were running at the time.
-        """
-        for conn in self.pipe.values():
-            conn.send(Message(MESSAGE_EXECUTOR_SHUTDOWN))
-        # timeout to terminate processes and process remaining messages in Pipe by polling thread
-        time.sleep(5)
-        for exc in self.executors:
-            if exc.is_alive():
-                exc.terminate()
-            exc.join()
-        self.pipe = None
-        self.executors = None
-        self.task_queue_map = None
+                conn.send(Message(EXECUTOR_CANCEL_TASK, task_id=task_id))
