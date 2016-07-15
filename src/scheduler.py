@@ -30,15 +30,35 @@ EXECUTOR_TASK_SUCCEEDED = "EXECUTOR_TASK_SUCCEEDED"
 EXECUTOR_TASK_FAILED = "EXECUTOR_TASK_FAILED"
 EXECUTOR_TASK_CANCELLED = "EXECUTOR_TASK_CANCELLED"
 
-class Block(object):
+class Task(object):
     """
-    Block class is a public API on creating executable code within scheduler Task. Must be
+    Task class is a public API for creating executable code within executor TaskThread. Must be
     serializable, and must implement methods:
+    - uid
+    - priority
     - run()
     - cancel()
-    Block defines the running code for unit of execution, note that it is assumed to be blocking,
-    though should handle asynchronous calls of `cancel()` method.
+    Task defines the running code for unit of execution, note that it is assumed to be blocking,
+    though should handle asynchronous calls of `cancel()` method correctly.
     """
+    @property
+    def uid(self):
+        """
+        Unique identifier for task.
+
+        :return: globally unique task id
+        """
+        raise NotImplementedError("Not implemented")
+
+    @property
+    def priority(self):
+        """
+        Priority of the task. Must be one of the PRIORITY_0, PRIORITY_1, PRIORITY_2.
+
+        :return: task priority
+        """
+        raise NotImplementedError("Not implemented")
+
     def run(self):
         """
         Main method within Block code executes. This method should block and wait for it to
@@ -99,66 +119,66 @@ class Message(object):
 
 class WorkerThread(threading.Thread):
     """
-    Non-daemon thread to execute Block instance. Any exception is captured and sent back to a task.
-    Communication with the task goes through message queue, which is created before launching
-    thread.
+    Non-daemon thread to execute Task instance. Any exception is captured and sent back to a
+    task thread. Communication with the task thread goes through message queue, which is created
+    before launching thread.
     """
-    def __init__(self, block, msg_queue):
+    def __init__(self, task, msg_queue):
         """
         Create new instance of WorkerThread.
 
-        :param block: Block instance to run
+        :param task: Task instance to run
         :param msg_queue: message queue, mainly to store error messages
         """
         super(WorkerThread, self).__init__()
-        self._block = block
+        self._task = task
         self._msg_queue = msg_queue
 
     def run(self):
         # pylint: disable=W0703,broad-except
         try:
-            self._block.run()
+            self._task.run()
         except Exception as e:
             self.msg_queue.put_nowait(e)
         # pylint: enable=W0703,broad-except
 
     def cancel(self):
-        self._block.cancel()
+        self._task.cancel()
 
-class Task(threading.Thread):
+class TaskThread(threading.Thread):
     """
-    Task is a unit of execution. Should be pickle-able. Essentially a daemon thread that spawns
-    another worker thread to execute block. Life cycle of the task is reflected in set of statuses:
+    TaskThread is a container for task as a unit of execution. It is essentially a daemon thread
+    that spawns another worker thread to execute task block. Life cycle of the task is reflected in
+    set of statuses:
     TASK_PENDING -> TASK_STARTED -> TASK_FAILED/TASK_SUCCEEDED
                                  -> TASK_CANCELLED
     When task is created it is assigned TASK_PENDING status, TASK_STARTED is assigned when task is
     launched, we also start collecting metrics, TASK_FAILED/TASK_SUCCEEDED is returned when worker
     thread is finished; if there is any message in msg_queue as an exception, task is considered
     failed, otherwise succeeded. Task can also be cancelled during execution. Note that task does
-    not guarantee that worker thread will exit correctly, this depends on Block implementation.
+    not guarantee that worker thread will exit correctly, this depends on actual implementation.
     """
-    def __init__(self, uid, block=None, logger=None):
+    def __init__(self, task, logger=None):
         """
-        Create new instance of Task. If block is not provided task is considered empty, note that
-        code block must be serializable with pickle or None.
+        Create new instance of TaskThread. Note that task block must be serializable with pickle.
 
         :param uid: unique identifier for task
-        :param block: code to execute for this task, can be None
+        :param task: code to execute for this task thread
         :param logger: available logger function, uses default if None
         """
-        super(Task, self).__init__()
+        super(TaskThread, self).__init__()
         # task is by definition a daemon thread
         self.daemon = True
         # refresh timeout for worker thread
         self.refresh_timeout = 0.5
-        if block is not None and not isinstance(block, Block):
-            raise AttributeError("Invalid block provided: %s" % block)
-        self.__uid = uid
-        self.__block = block
+        if not isinstance(task, Task):
+            raise AttributeError("Invalid task provided: %s" % task)
+        self.__uid = task.uid
+        self.__task = task
         self.__metrics = {}
         self.__status = TASK_PENDING
         # setting up logger
-        self.name = "%s[%s]" % (type(self).__name__, self.__uid)
+        self.name = "Task[%s]" % self.__uid
         self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
         # different work statuses
         self.__cancel = threading.Event()
@@ -206,9 +226,9 @@ class Task(threading.Thread):
 
     def cancel(self):
         """
-        Cancel current thread and potentially running block.
+        Cancel current thread and potentially running task.
         """
-        self.logger.debug("Requested termination of task")
+        self.logger.debug("Requested cancellation of task")
         self.__cancel.set()
 
     @property
@@ -246,12 +266,12 @@ class Task(threading.Thread):
         self.logger.debug("Started, time=%s", self._get_metric("starttime"))
         try:
             msg_queue = threadqueue.Queue()
-            wprocess = WorkerThread(self.__block, msg_queue)
+            wprocess = WorkerThread(self.__task, msg_queue)
             wprocess.start()
             next_iteration = True
             while next_iteration:
                 time.sleep(self.refresh_timeout)
-                if self.cancelled:
+                if self.is_cancelled:
                     wprocess.cancel()
                     raise TaskInterruptedException()
                 if not wprocess.is_alive():
@@ -269,6 +289,7 @@ class Task(threading.Thread):
         except Exception as e:
             # any other exception is considered a failure
             self._set_metric("reason", "%s" % e)
+            self.logger.debug("Failure reason=%s", self._get_metric("reason"))
             self.__status = TASK_FAILED
             self._safe_exec(self.on_task_failed, uid=self.__uid, reason=self._get_metric("reason"))
         # pylint: enable=W0703,broad-except
@@ -308,6 +329,7 @@ class Executor(multiprocessing.Process):
         self.task_queue_map = task_queue_map
         self.timeout = timeout
         # if no logger defined create new logger and add null handler
+        self.log_func = logger
         self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
         # we also keep reference to active task, this will be reassigned for every iteration
         self._active_task = None
@@ -344,19 +366,25 @@ class Executor(multiprocessing.Process):
         """
         Extract new task from priority list of queues. If no tasks found for priority or priority
         does not exist in dictionary, next priority is checked. If task is found, it is returned,
-        otherwise None.
+        otherwise None. For each task TaskThread is created to provide status and metrics updates.
 
         :return: new available task across priorities
         """
+        task = None
         for priority in const.PRIORITIES:
             self.logger.debug("Searching task in queue for priority %s" % priority)
             try:
-                return self.task_queue_map[priority].get(block=False)
+                task = self.task_queue_map[priority].get(block=False)
             except threadqueue.Empty:
                 self.logger.debug("No tasks available in queue for priority %s" % priority)
             except KeyError:
                 self.logger.debug("Non-existent priority %s skipped" % priority)
-        return None
+            else:
+                if task:
+                    break
+        # create thread for task
+        task_thread = TaskThread(task, self.log_func) if task else None
+        return task_thread
 
     def _process_task(self):
         """
@@ -366,6 +394,7 @@ class Executor(multiprocessing.Process):
         """
         if not self._active_task:
             self._active_task = self._get_new_task()
+            self.logger.warning("New task registered")
         # before checking statuses and proceed execution, we check if current task was
         # requested to be cancelled, if yes, we remove it from set of ids.
         if self._active_task and self._active_task.uid in self._cancel_task_ids:
@@ -508,6 +537,48 @@ class Scheduler(object):
             const.PRIORITY_1: multiprocessing.Queue(),
             const.PRIORITY_2: multiprocessing.Queue()
         }
+        # scheduler metrics
+        self.__metrics = {}
+
+    def _get_metric(self, name):
+        """
+        Get metric for name.
+
+        :return: metric value
+        """
+        return self.__metrics[name] if name in self.__metrics else None
+
+    def _set_metric(self, name, value):
+        """
+        Set metric value for name. Will update previously registered value.
+
+        :param name: metric name
+        :param value: metric value
+        """
+        self.__metrics[name] = value
+
+    def _increment_metric(self, name):
+        """
+        Increment metric assuming that metric is integer value. If error occurs defaults to None.
+
+        :param name: metric name
+        """
+        updated = 0
+        try:
+            updated = int(self._get_metric(name))
+        except ValueError:
+            updated = 0
+        except TypeError:
+            updated = None
+        self._set_metric(name, updated)
+
+    def get_metrics(self):
+        """
+        Return copy of the scheduler metrics.
+
+        :return: scheduler metrics copy
+        """
+        return self.__metrics.copy()
 
     def _prepare_executor(self, name):
         """
@@ -525,16 +596,6 @@ class Scheduler(object):
         self.executors.append(exc)
         self.pipe[exc.name] = main_conn
         return exc
-
-    def executor_class(self):
-        """
-        .. note:: DeveloperApi
-
-        Return executor class to launch. By default returns generic Executor implementation.
-
-        :return: scheduler.Executor subclass
-        """
-        return Executor
 
     def start(self):
         """
@@ -564,32 +625,20 @@ class Scheduler(object):
         self.executors = None
         self.task_queue_map = None
 
-    def _put(self, priority, task):
+    def submit(self, task):
         """
-        Internal method to add task for priority.
+        Add task for priority provided with task.
 
-        :param priority: priority of task, must be one of the const.PRIORITY_x
         :param task: task to add, must be instance of Task
         :return: task uid
         """
-        if priority not in self.task_queue_map:
-            raise KeyError("No priority %s found in queue map" % priority)
         if not isinstance(task, Task):
             raise TypeError("%s != Task" % type(task))
-        self.task_queue_map[priority].put_nowait(task)
+        if task.priority not in self.task_queue_map:
+            raise KeyError("No priority %s found in queue map" % task.priority)
+        self.task_queue_map[task.priority].put_nowait(task)
+        self._increment_metric("submitted-tasks")
         return task.uid
-
-    def put(self, uid, priority, block):
-        """
-        Add block. This creates relevant Task with uid and schedules for priority specified.
-
-        :param uid: unique identifier for task
-        :param priority: priority to schedule (should be one of PRIORITIES)
-        :param block: block to execute
-        :return: task uid
-        """
-        task = Task(uid, block, self.log_func)
-        return self._put(priority, task)
 
     def cancel(self, task_id):
         """
@@ -602,3 +651,100 @@ class Scheduler(object):
         if task_id:
             for conn in self.pipe.values():
                 conn.send(Message(EXECUTOR_CANCEL_TASK, task_id=task_id))
+
+    # Thread is considered to be long-lived, and is terminated when scheduler is stopped.
+    def _process_callback(self):
+        msg_list = {}
+        # sometimes thread can report that pipe is None, which might require lock before
+        # processing, currently we just skip iteration, if it is None.
+        if self.pipe is not None:
+            for conn in self.pipe.values():
+                while conn.poll():
+                    message = conn.recv()
+                    if message.status in msg_list:
+                        msg_list[message.status].append(message)
+                    else:
+                        msg_list[message.status] = [message]
+        if EXECUTOR_TASK_STARTED in msg_list:
+            self.on_task_started(msg_list[EXECUTOR_TASK_STARTED])
+        if EXECUTOR_TASK_SUCCEEDED in msg_list:
+            self.on_task_succeeded(msg_list[EXECUTOR_TASK_SUCCEEDED])
+        if EXECUTOR_TASK_FAILED in msg_list:
+            self.on_task_failed(msg_list[EXECUTOR_TASK_FAILED])
+        if EXECUTOR_TASK_CANCELLED in msg_list:
+            self.on_task_cancelled(msg_list[EXECUTOR_TASK_CANCELLED])
+
+    def _prepare_polling_thread(self, name):
+        """
+        Prepare maintenance thread for polling messages from Pipe. This returns None, when no
+        target consumer is provided.
+
+        :param name: name of the polling thread
+        :return: created daemon thread or None, if target is not specified
+        """
+        def poll_messages():
+            while True:
+                self._process_callback()
+                time.sleep(self.timeout)
+        thread = threading.Thread(name=name, target=poll_messages)
+        thread.daemon = True
+        return thread
+
+    def start_maintenance(self):
+        """
+        Start all maintenance threads and processes.
+        """
+        # Launch polling thread for messages
+        thread = self._prepare_polling_thread("Polling-1")
+        if thread:
+            thread.start()
+
+    def executor_class(self):
+        """
+        .. note:: DeveloperApi
+
+        Return executor class to launch. By default returns generic Executor implementation.
+
+        :return: scheduler.Executor subclass
+        """
+        return Executor
+
+    def on_task_started(self, messages):
+        """
+        .. note:: DeveloperApi
+
+        Invoked when task is started on executor.
+
+        :param messages: list of messages for this event
+        """
+        pass
+
+    def on_task_succeeded(self, messages):
+        """
+        .. note:: DeveloperApi
+
+        Invoked when task is finished successfully on executor.
+
+        :param messages: list of messages for this event
+        """
+        pass
+
+    def on_task_failed(self, messages):
+        """
+        .. note:: DeveloperApi
+
+        Invoked when task is finished with failure on executor.
+
+        :param messages: list of messages for this event
+        """
+        pass
+
+    def on_task_cancelled(self, messages):
+        """
+        .. note:: DeveloperApi
+
+        Invoked when task is cancelled on executor.
+
+        :param messages: list of messages for this event
+        """
+        pass
