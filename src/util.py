@@ -152,7 +152,7 @@ def get_default_logger(name):
     """
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    if not logger.handlers:
+    if not logger.handlers: # pragma: no cover
         form = logging.Formatter("LOG :: %(asctime)s :: %(name)s :: %(levelname)s :: %(message)s")
         stderr = logging.StreamHandler()
         stderr.setFormatter(form)
