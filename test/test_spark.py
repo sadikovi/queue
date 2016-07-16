@@ -4,7 +4,6 @@ import unittest
 import mock
 import src.const as const
 import src.spark as spark
-import src.scheduler as scheduler
 
 # pylint: disable=W0212,protected-access
 class SparkStandaloneTaskSuite(unittest.TestCase):
@@ -297,8 +296,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         calls = [mock.call("/tmp/work/stdout", "wb"), mock.call("/tmp/work/stderr", "wb")]
         mock_util_open.assert_has_calls(calls)
 
-    @mock.patch("src.spark.time")
-    def test_run_no_ps(self, mock_time):
+    def test_run_no_ps(self):
         task = spark.SparkStandaloneTask("123", const.PRIORITY_0, logger=self.logger)
         task.launch_process = mock.Mock()
         with self.assertRaises(AttributeError):
@@ -316,8 +314,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         mock_time.sleep.assert_called_with(task.timeout)
 
     @mock.patch("src.spark.subprocess.Popen")
-    @mock.patch("src.spark.time")
-    def test_run_exit_code_fail(self, mock_time, mock_popen):
+    def test_run_exit_code_fail(self, mock_popen):
         popen_instance = mock.Mock()
         popen_instance.poll.side_effect = [None, None, 127]
         mock_popen.return_value = popen_instance
