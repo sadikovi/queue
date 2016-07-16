@@ -139,7 +139,7 @@ class WorkerThread(threading.Thread):
         try:
             self._task.run()
         except Exception as e:
-            self.msg_queue.put_nowait(e)
+            self._msg_queue.put_nowait(e)
         # pylint: enable=W0703,broad-except
 
     def cancel(self):
@@ -162,7 +162,6 @@ class TaskThread(threading.Thread):
         """
         Create new instance of TaskThread. Note that task block must be serializable with pickle.
 
-        :param uid: unique identifier for task
         :param task: code to execute for this task thread
         :param logger: available logger function, uses default if None
         """
@@ -184,8 +183,8 @@ class TaskThread(threading.Thread):
         self.__cancel = threading.Event()
         # callbacks
         # .. note:: DeveloperApi
-        self.on_task_start = None
-        self.on_task_cancel = None
+        self.on_task_started = None
+        self.on_task_cancelled = None
         self.on_task_succeeded = None
         self.on_task_failed = None
 
@@ -262,7 +261,7 @@ class TaskThread(threading.Thread):
         self._set_metric("duration", 0)
         self.__status = TASK_STARTED
         # try launching listener callback, note that failure should not affect execution of task
-        self._safe_exec(self.on_task_start, uid=self.__uid)
+        self._safe_exec(self.on_task_started, uid=self.__uid)
         self.logger.debug("Started, time=%s", self._get_metric("starttime"))
         try:
             msg_queue = threadqueue.Queue()
@@ -284,7 +283,7 @@ class TaskThread(threading.Thread):
         except TaskInterruptedException:
             # task has been cancelled or requested termination
             self.__status = TASK_CANCELLED
-            self._safe_exec(self.on_task_cancel, uid=self.__uid)
+            self._safe_exec(self.on_task_cancelled, uid=self.__uid)
         # pylint: disable=W0703,broad-except
         except Exception as e:
             # any other exception is considered a failure
@@ -352,9 +351,9 @@ class Executor(multiprocessing.Process):
                 raise ExecutorInterruptedException("Executor shutdown")
             elif msg.status == EXECUTOR_CANCEL_TASK: # pragma: no branch
                 # update set of tasks to cancel
-                if "task_id" in msg.arguments:
+                if "task_id" in msg.arguments: # pragma: no branch
                     task_id = msg.arguments["task_id"]
-                    self.cancel_task_ids.add(task_id)
+                    self._cancel_task_ids.add(task_id)
                     self.logger.debug("Registered cancelled task %s", task_id)
             else:
                 # valid but unrecognized message, no-op
@@ -380,7 +379,7 @@ class Executor(multiprocessing.Process):
             except KeyError:
                 self.logger.debug("Non-existent priority %s skipped" % priority)
             else:
-                if task:
+                if task: # pragma: no branch
                     break
         # create thread for task
         task_thread = TaskThread(task, self.log_func) if task else None
@@ -415,7 +414,7 @@ class Executor(multiprocessing.Process):
                     self.logger.info("External system is not available, will try again later")
             elif task_status is TASK_STARTED:
                 # task has started and running
-                if self._active_task.is_alive():
+                if self._active_task.is_alive(): # pragma: no branch
                     self.logger.debug("Ping task %s is alive", task_id)
             elif task_status is TASK_SUCCEEDED:
                 # task finished successfully
@@ -429,8 +428,8 @@ class Executor(multiprocessing.Process):
                 self._active_task = None
             elif task_status is TASK_CANCELLED:
                 # task has been cancelled
-                if not self._active_task:
-                    self.active_task = None
+                if self._active_task: # pragma: no branch
+                    self._active_task = None
             else:
                 self.logger.warning("Unknown status %s for task %s", task_status, task_id)
         else:
@@ -539,6 +538,39 @@ class Scheduler(object):
         }
         # scheduler metrics
         self.__metrics = {}
+        # callbacks
+        """
+        .. note:: DeveloperApi
+
+        Invoked when task is started on executor.
+
+        :param messages: list of messages EXECUTOR_TASK_STARTED
+        """
+        self.on_task_started = None
+        """
+        .. note:: DeveloperApi
+
+        Invoked when task is cancelled on executor.
+
+        :param messages: list of messages EXECUTOR_TASK_CANCELLED
+        """
+        self.on_task_cancelled = None
+        """
+        .. note:: DeveloperApi
+
+        Invoked when task is finished successfully on executor.
+
+        :param messages: list of messages EXECUTOR_TASK_SUCCEEDED
+        """
+        self.on_task_succeeded = None
+        """
+        .. note:: DeveloperApi
+
+        Invoked when task is finished with failure on executor.
+
+        :param messages: list of messages EXECUTOR_TASK_FAILED
+        """
+        self.on_task_failed = None
 
     def _get_metric(self, name):
         """
@@ -565,7 +597,7 @@ class Scheduler(object):
         """
         updated = 0
         try:
-            updated = int(self._get_metric(name))
+            updated = int(self._get_metric(name)) + 1
         except ValueError:
             updated = 0
         except TypeError:
@@ -665,14 +697,14 @@ class Scheduler(object):
                         msg_list[message.status].append(message)
                     else:
                         msg_list[message.status] = [message]
-        if EXECUTOR_TASK_STARTED in msg_list:
-            self.on_task_started(msg_list[EXECUTOR_TASK_STARTED])
-        if EXECUTOR_TASK_SUCCEEDED in msg_list:
-            self.on_task_succeeded(msg_list[EXECUTOR_TASK_SUCCEEDED])
-        if EXECUTOR_TASK_FAILED in msg_list:
-            self.on_task_failed(msg_list[EXECUTOR_TASK_FAILED])
-        if EXECUTOR_TASK_CANCELLED in msg_list:
-            self.on_task_cancelled(msg_list[EXECUTOR_TASK_CANCELLED])
+        if self.on_task_started and EXECUTOR_TASK_STARTED in msg_list:
+            self.on_task_started.__call__(msg_list[EXECUTOR_TASK_STARTED])
+        if self.on_task_succeeded and EXECUTOR_TASK_SUCCEEDED in msg_list:
+            self.on_task_succeeded.__call__(msg_list[EXECUTOR_TASK_SUCCEEDED])
+        if self.on_task_failed and EXECUTOR_TASK_FAILED in msg_list:
+            self.on_task_failed.__call__(msg_list[EXECUTOR_TASK_FAILED])
+        if self.on_task_cancelled and EXECUTOR_TASK_CANCELLED in msg_list:
+            self.on_task_cancelled.__call__(msg_list[EXECUTOR_TASK_CANCELLED])
 
     def _prepare_polling_thread(self, name):
         """
@@ -682,7 +714,7 @@ class Scheduler(object):
         :param name: name of the polling thread
         :return: created daemon thread or None, if target is not specified
         """
-        def poll_messages():
+        def poll_messages(): # pragma: no cover
             while True:
                 self._process_callback()
                 time.sleep(self.timeout)
@@ -708,43 +740,3 @@ class Scheduler(object):
         :return: scheduler.Executor subclass
         """
         return Executor
-
-    def on_task_started(self, messages):
-        """
-        .. note:: DeveloperApi
-
-        Invoked when task is started on executor.
-
-        :param messages: list of messages for this event
-        """
-        pass
-
-    def on_task_succeeded(self, messages):
-        """
-        .. note:: DeveloperApi
-
-        Invoked when task is finished successfully on executor.
-
-        :param messages: list of messages for this event
-        """
-        pass
-
-    def on_task_failed(self, messages):
-        """
-        .. note:: DeveloperApi
-
-        Invoked when task is finished with failure on executor.
-
-        :param messages: list of messages for this event
-        """
-        pass
-
-    def on_task_cancelled(self, messages):
-        """
-        .. note:: DeveloperApi
-
-        Invoked when task is cancelled on executor.
-
-        :param messages: list of messages for this event
-        """
-        pass

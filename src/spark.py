@@ -154,6 +154,13 @@ class SparkStandaloneTask(scheduler.Task):
         return self.__uid
 
     @property
+    def priority(self):
+        return None
+
+    def run(self):
+        pass
+
+    @property
     def exit_code(self):
         return self.__returncode
 
