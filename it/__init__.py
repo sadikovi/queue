@@ -5,16 +5,13 @@ import it.it_scheduler as it_scheduler
 
 def addTests(tests):
     # add scheduler tests
-    scheduler1_test = it_scheduler.Scheduler1IntegrationTest()
-    scheduler2_test = it_scheduler.Scheduler2IntegrationTest()
-    scheduler3_test = it_scheduler.Scheduler3IntegrationTest()
-    scheduler4_test = it_scheduler.Scheduler4IntegrationTest()
-    scheduler5_test = it_scheduler.Scheduler5IntegrationTest()
-    tests.append(scheduler1_test)
-    tests.append(scheduler2_test)
-    tests.append(scheduler3_test)
-    tests.append(scheduler4_test)
-    tests.append(scheduler5_test)
+    tests += [
+        it_scheduler.SchedulerSimpleSuite(),
+        it_scheduler.SchedulerCancelSuite(),
+        it_scheduler.SchedulerFinishCancelSuite(),
+        it_scheduler.SchedulerCancelAheadSuite(),
+        it_scheduler.SchedulerFailedTasksSuite()
+    ]
 
 def runTests(tests):
     for test in tests:

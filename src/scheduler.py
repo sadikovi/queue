@@ -397,8 +397,8 @@ class Executor(multiprocessing.Process):
         # before checking statuses and proceed execution, we check if current task was
         # requested to be cancelled, if yes, we remove it from set of ids.
         if self._active_task and self._active_task.uid in self._cancel_task_ids:
-            self._cancel_active_task()
             self._cancel_task_ids.discard(self._active_task.uid)
+            self._cancel_active_task()
         # check general task processing
         if self._active_task:
             task_id = self._active_task.uid

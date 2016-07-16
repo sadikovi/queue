@@ -152,8 +152,9 @@ def get_default_logger(name):
     """
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    form = logging.Formatter("LOG :: %(asctime)s :: %(name)s :: %(levelname)s :: %(message)s")
-    stderr = logging.StreamHandler()
-    stderr.setFormatter(form)
-    logger.addHandler(stderr)
+    if not logger.handlers:
+        form = logging.Formatter("LOG :: %(asctime)s :: %(name)s :: %(levelname)s :: %(message)s")
+        stderr = logging.StreamHandler()
+        stderr.setFormatter(form)
+        logger.addHandler(stderr)
     return logger

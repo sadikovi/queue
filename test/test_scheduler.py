@@ -342,6 +342,15 @@ class ExecutorSuite(unittest.TestCase):
         exc._process_task()
         self.assertEqual(exc._active_task, None)
 
+    def test_process_task_cancel_ahead(self):
+        exc = scheduler.Executor("a", self.conn, {}, timeout=1, logger=self.logger)
+        exc._active_task = mock.create_autospec(scheduler.TaskThread, uid="123",
+                                                status=scheduler.TASK_PENDING)
+        exc._cancel_task_ids.add("123")
+        exc._process_task()
+        self.assertEqual(exc._active_task, None)
+        self.assertTrue("123" not in exc._cancel_task_ids)
+
     def test_process_task_no_tasks(self):
         exc = scheduler.Executor("a", self.conn, {}, timeout=1, logger=self.logger)
         exc._active_task = None
