@@ -118,21 +118,25 @@ class SparkStandaloneTask(scheduler.Task):
     Special task to process Spark submission for standalone cluster manager. Essentially creates
     spark-submit command and executes it.
     """
-    def __init__(self, uid, logger=None):
+    def __init__(self, uid, priority, logger=None):
         """
         Create new instance of Spark standalone task. Most of the options are set to default
         values. Use different setters to adjust parameters.
 
         :param uid: unique identifier for a task
+        :param priority: task priority, should be one of PRIORITY_0, PRIORITY_1, PRIORITY_2
+        :param logger: logger function
         """
         # == Task options ==
         # Unique task identifier
         self.__uid = uid
-        # Internal task status (task is always blocked at the start)
-        self.__status = scheduler.TASK_BLOCKED
+        # Task priority
+        self.__priority = priority
+        # Task refresh timeout
+        self.timeout = 1.0
         # Task logger
         logger_name = "%s[%s]" % (type(self).__name__, self.__uid)
-        self.logger = util.get_default_logger(logger_name) if not logger else logger
+        self.logger = logger(logger_name) if logger else util.get_default_logger(logger_name)
         # == Spark cluster related options ==
         # Define how to connect and retrieve cluster information
         self._spark_submit = SPARK_SUBMIT
@@ -140,7 +144,6 @@ class SparkStandaloneTask(scheduler.Task):
         self._web_url = SPARK_WEB_URL
         # Shell process options (process, exit code, working directory for output streams)
         self.__ps = None
-        self.__returncode = None
         self.__working_directory = None
         # == Spark application options ==
         self.name = SPARK_APP_NAME
@@ -155,14 +158,7 @@ class SparkStandaloneTask(scheduler.Task):
 
     @property
     def priority(self):
-        return None
-
-    def run(self):
-        pass
-
-    @property
-    def exit_code(self):
-        return self.__returncode
+        return self.__priority
 
     # == Get and set for Spark cluster related options ==
     @property
@@ -280,35 +276,51 @@ class SparkStandaloneTask(scheduler.Task):
             if key == "job_options":
                 self.job_options = validate_job_options(value)
 
-    def async_launch(self):
+    def launch_process(self):
+        """
+        Launch process for spark-submit.
+        """
         # spark-submit command to launch
         command = self.cmd()
         self.logger.info("Launch command %s", command)
-        buffer_size = 4096
         # only create stdout and stderr when working directory is provided
         if self.__working_directory:
             stdout_path = util.concat(self.__working_directory, "stdout")
             stderr_path = util.concat(self.__working_directory, "stderr")
             stdout = util.open(stdout_path, "wb")
             stderr = util.open(stderr_path, "wb")
-            self.__ps = subprocess.Popen(command, bufsize=buffer_size, stdout=stdout, stderr=stderr,
+            self.__ps = subprocess.Popen(command, bufsize=4096, stdout=stdout, stderr=stderr,
                                          close_fds=True)
         else:
-            self.__ps = subprocess.Popen(command, bufsize=buffer_size, stdout=None, stderr=None,
+            self.__ps = subprocess.Popen(command, bufsize=4096, stdout=None, stderr=None,
                                          close_fds=True)
         self.logger.info("Process pid=%s", self.__ps.pid)
-        self.__status = scheduler.TASK_RUNNING
+
+    def run(self):
+        """
+        Launch process and refresh status with fixed interval.
+        """
+        self.launch_process()
+        returncode = None
+        while returncode is None:
+            time.sleep(self.timeout)
+            returncode = self.__ps.poll()
+        # once process has finished, check return code, If it does not equal 0, raise exception
+        if returncode != 0:
+            raise IOError("Process finished with non-zero exit code %s" % returncode)
 
     def cancel(self):
         """
         Cancel running task. Process is sent SIGTERM first, and if it is not terminated within 10
         seconds, SIGKILL is sent permanently and blocked until exit code is returned. Note that
         status is also assigned as TASK_FINISHED.
+
+        :return: exit code (for testing purposes)
         """
+        return_code = None
         if self.__ps:
             self.__ps.terminate()
-            attempts = 7 # attempts (seconds) to wait before killing process
-            return_code = None
+            attempts = 5 # attempts (seconds) to wait before killing process
             while attempts > 0 and return_code is None:
                 time.sleep(1)
                 return_code = self.__ps.poll()
@@ -316,16 +328,7 @@ class SparkStandaloneTask(scheduler.Task):
             if return_code is None:
                 self.__ps.kill()
                 return_code = self.__ps.wait()
-            self.__returncode = return_code
-        self.__status = scheduler.TASK_FINISHED
-
-    def _current_status(self):
-        """
-        Get current status, for testing purposes only.
-
-        :return: current status of the task
-        """
-        return self.__status
+        return return_code
 
     def _current_ps(self):
         """
@@ -334,31 +337,3 @@ class SparkStandaloneTask(scheduler.Task):
         :return: current process for the task
         """
         return self.__ps
-
-    def status(self):
-        if self.__status == scheduler.TASK_BLOCKED:
-            # need to check, if tasks can be launched
-            can_submit = can_submit_task(self._web_url)
-            if can_submit:
-                self.__status = scheduler.TASK_PENDING
-        elif self.__status == scheduler.TASK_PENDING:
-            # do nothing, scheduler will launch process
-            pass
-        elif self.__status == scheduler.TASK_RUNNING:
-            if self.__ps:
-                # check process, if return code is not None, process is finished, otherwise,
-                # process status is unchanged, and is TASK_RUNNING
-                return_code = self.__ps.poll()
-                if return_code:
-                    self.__status = scheduler.TASK_FINISHED
-                    self.__returncode = return_code
-            else:
-                # assume it is finished
-                self.logger.debug("Process is not found, assume that task is finished")
-                self.__status = scheduler.TASK_FINISHED
-        elif self.__status == scheduler.TASK_FINISHED:
-            # do nothing, task is finished
-            pass
-        else:
-            pass
-        return self.__status
