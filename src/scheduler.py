@@ -646,6 +646,10 @@ class Scheduler(object):
         if not inspect.isclass(clazz) or not issubclass(clazz, Executor):
             raise TypeError("Type %s !<: Executor" % clazz)
         exc = clazz(name, exc_conn, self.task_queue_map, timeout=self.timeout, logger=self.log_func)
+        # update executor with additional options (note that this should be used if custom executor
+        # class is provided)
+        self.update_executor(exc)
+        # update maintenance tools
         self.executors.append(exc)
         self.pipe[exc.name] = main_conn
         self.is_alive_statuses[exc.name] = util.utcnow()
@@ -784,8 +788,20 @@ class Scheduler(object):
         """
         .. note:: DeveloperApi
 
-        Return executor class to launch. By default returns generic Executor implementation.
+        Return executor class to launch. By default returns generic Executor implementation. Note
+        that subclass implementation should take the same parameters as Executor.
 
         :return: scheduler.Executor subclass
         """
         return Executor
+
+    def update_executor(self, executor):
+        """
+        .. note:: DeveloperApi
+
+        Update executor instance with additional options.
+        This should be used with custom executor class.
+
+        :param executor: executor to update
+        """
+        pass

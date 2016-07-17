@@ -9,9 +9,9 @@ RUN_TESTS = {
     "test.test_const": True,
     "test.test_queue": True,
     "test.test_undersystem": True,
-    "test.test_spark": True,
     "test.test_util": True,
-    "test.test_scheduler": True
+    "test.test_scheduler": True,
+    "test.test_spark": True
 }
 
 suites = unittest.TestSuite()

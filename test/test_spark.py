@@ -356,8 +356,58 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         task._current_ps().kill.assert_called_with()
 # pylint: enable=W0212,protected-access
 
+class SparkStandaloneExecutorSuite(unittest.TestCase):
+    def setUp(self):
+        self.queue_map = {}
+        self.conn = mock.Mock()
+        self.logger = mock.Mock()
+
+    def test_init_1(self):
+        exc = spark.SparkStandaloneExecutor("a", self.conn, self.queue_map, logger=self.logger)
+        self.assertEqual(exc.timeout, 1.0)
+        self.assertEqual(exc.master_url, spark.SPARK_MASTER_URL)
+        self.assertEqual(exc.web_url, spark.SPARK_WEB_URL)
+        self.assertEqual(exc.max_available_slots, 1)
+
+    def test_init_2(self):
+        exc = spark.SparkStandaloneExecutor("a", self.conn, self.queue_map, timeout=5.0,
+                                            logger=self.logger)
+        self.assertEqual(exc.timeout, 5.0)
+
+    def test_external_system_available(self):
+        spark.can_submit_task = mock.Mock()
+        exc = spark.SparkStandaloneExecutor("a", self.conn, self.queue_map, logger=self.logger)
+        exc.external_system_available()
+        spark.can_submit_task.assert_called_once_with(exc.web_url, exc.max_available_slots)
+
+class SparkStandaloneSchedulerSuite(unittest.TestCase):
+    def setUp(self):
+        self.logger = mock.Mock()
+        self.master_url = "spark://SANDBOX:7077"
+        self.web_url = "http://LOCALHOST:8080"
+
+    def test_init(self):
+        sched = spark.SparkStandaloneScheduler(self.master_url, self.web_url, 5, 1.0, self.logger)
+        self.assertEqual(sched.master_url, self.master_url)
+        self.assertEqual(sched.web_url, self.web_url)
+        self.assertEqual(sched.max_available_slots, 5)
+
+    def test_executor_class(self):
+        sched = spark.SparkStandaloneScheduler(self.master_url, self.web_url, 5, 1.0, self.logger)
+        self.assertEqual(sched.executor_class(), spark.SparkStandaloneExecutor)
+
+    def test_update_executor(self):
+        sched = spark.SparkStandaloneScheduler(self.master_url, self.web_url, 5, 1.0, self.logger)
+        mock_executor = mock.create_autospec(spark.SparkStandaloneExecutor)
+        sched.update_executor(mock_executor)
+        self.assertEqual(mock_executor.master_url, self.master_url)
+        self.assertEqual(mock_executor.web_url, self.web_url)
+        self.assertEqual(mock_executor.max_available_slots, 5)
+
 # Load test suites
 def suites():
     return [
-        SparkStandaloneTaskSuite
+        SparkStandaloneTaskSuite,
+        SparkStandaloneExecutorSuite,
+        SparkStandaloneSchedulerSuite
     ]

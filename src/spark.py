@@ -337,3 +337,55 @@ class SparkStandaloneTask(scheduler.Task):
         :return: current process for the task
         """
         return self.__ps
+
+class SparkStandaloneExecutor(scheduler.Executor):
+    """
+    Spark scheduler executor for standalone cluster manager. Provides method to detect Spark
+    cluster availability.
+    """
+    def __init__(self, name, conn, task_queue_map, timeout=1.0, logger=None):
+        super(SparkStandaloneExecutor, self).__init__(name, conn, task_queue_map, timeout, logger)
+        # Spark master url, e.g. spark://master:7077, we do not validate value
+        self.master_url = SPARK_MASTER_URL
+        # Spark web url, e.g. http://localhost:8080, we do not validate value
+        self.web_url = SPARK_WEB_URL
+        # Maximum number of running jobs after which stop submitting tasks
+        self.max_available_slots = 1
+
+    def external_system_available(self):
+        """
+        Check whether or not Spark can accept another task to run.
+
+        :return: True, if cluster can process task, False otherwise
+        """
+        return can_submit_task(self.web_url, self.max_available_slots)
+
+class SparkStandaloneScheduler(scheduler.Scheduler):
+    """
+    Spark standalone scheduler for Queue. Launches executors and processes task to run on Spark
+    cluster.
+    """
+    def __init__(self, master_url, web_url, num_executors, timeout=1.0, logger=None):
+        super(SparkStandaloneScheduler, self).__init__(num_executors, timeout, logger)
+        self.master_url = master_url
+        self.web_url = web_url
+        # maximum available slots is number of executors to run parallel tasks
+        self.max_available_slots = num_executors
+
+    def executor_class(self):
+        """
+        Return executor for Spark standalone Queue scheduler.
+
+        :return: Executor class for Spark standalone
+        """
+        return SparkStandaloneExecutor
+
+    def update_executor(self, executor):
+        """
+        Update executor with Spark options: master url and web url, and max available slots.
+
+        :param executor: executor to update
+        """
+        executor.master_url = self.master_url
+        executor.web_url = self.web_url
+        executor.max_available_slots = self.max_available_slots
