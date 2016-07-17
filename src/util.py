@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import datetime
 import logging
 import os
 import urlparse
@@ -158,3 +159,12 @@ def get_default_logger(name):
         stderr.setFormatter(form)
         logger.addHandler(stderr)
     return logger
+
+# == Datetime related methods and classes ==
+def utcnow():
+    """
+    Simple wrapper on datetime.utcnow(), returns datetime object as UTC.
+
+    :return: datetime object in UTC
+    """
+    return datetime.datetime.utcnow() # pragma: no cover

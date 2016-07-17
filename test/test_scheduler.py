@@ -247,6 +247,15 @@ class ExecutorSuite(unittest.TestCase):
         self.assertTrue("123" in exc._cancel_task_ids)
         exc.logger.debug.assert_called_with("Registered cancelled task %s", "123")
 
+    def test_respond_is_alive(self):
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc._respond_is_alive()
+        self.assertEqual(self.conn.send.call_count, 1)
+        self.assertEqual(len(self.conn.send.call_args_list), 1)
+        msg = self.conn.send.call_args_list[0][0][0]
+        self.assertEqual(msg.status, scheduler.EXECUTOR_IS_ALIVE)
+        self.assertEqual(msg.arguments["name"], "Executor[a]")
+
     def test_get_new_task_empty_map(self):
         exc = scheduler.Executor("a", self.conn, {}, timeout=1, logger=self.logger)
         self.assertEqual(exc._get_new_task(), None)
@@ -640,6 +649,20 @@ class SchedulerSuite(unittest.TestCase):
         self.assertEqual(sched.on_task_succeeded.call_count, 0)
         self.assertEqual(sched.on_task_cancelled.call_count, 0)
 
+    def test_process_callback_4(self):
+        # test of 'is alive' messages
+        sched = scheduler.Scheduler(2, 0.5, self.logger)
+        sched.on_is_alive = mock.Mock()
+        msg = mock.create_autospec(scheduler.Message, status=scheduler.EXECUTOR_IS_ALIVE)
+        conn = mock.Mock()
+        conn.poll.side_effect = [True, False]
+        conn.recv.side_effect = [msg]
+        sched.pipe = {"a": conn}
+        # process callback
+        sched._process_callback()
+        # check function calls
+        sched.on_is_alive.assert_called_once_with([msg])
+
     def test_prepare_polling_thread(self):
         sched = scheduler.Scheduler(3, 0.5, self.logger)
         # check polling thread without consumer
@@ -659,6 +682,27 @@ class SchedulerSuite(unittest.TestCase):
         # launch maintenance when thread is None
         sched._prepare_polling_thread.return_value = None
         sched.start_maintenance()
+
+    def test_update_is_alive(self):
+        sched = scheduler.Scheduler(1, 0.5, self.logger)
+        msg1 = mock.create_autospec(scheduler.Message, status=scheduler.EXECUTOR_IS_ALIVE,
+                                    arguments={"name": "x"})
+        msg2 = mock.create_autospec(scheduler.Message, status=scheduler.EXECUTOR_IS_ALIVE,
+                                    arguments={})
+        self.assertTrue("x" not in sched.is_alive_statuses)
+        sched.is_alive_statuses = {}
+        sched._update_is_alive([msg1, msg2])
+        self.assertEqual(len(sched.is_alive_statuses), 1)
+        self.assertTrue("x" in sched.is_alive_statuses)
+
+    def test_get_is_alive_statuses(self):
+        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched.is_alive_statuses["a"] = 1
+        sched.is_alive_statuses["b"] = 2
+        copy = sched.get_is_alive_statuses()
+        self.assertEqual(copy, sched.is_alive_statuses)
+        copy["a"] = 2
+        self.assertNotEqual(copy, sched.is_alive_statuses)
 # pylint: enable=W0212,protected-access
 
 # Load test suites

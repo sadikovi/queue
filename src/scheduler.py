@@ -22,6 +22,7 @@ TASK_FAILED = "FAILED"
 
 # == Message statuses ==
 # Action requests for executor
+EXECUTOR_IS_ALIVE = "EXECUTOR_IS_ALIVE"
 EXECUTOR_SHUTDOWN = "EXECUTOR_SHUTDOWN"
 EXECUTOR_CANCEL_TASK = "EXECUTOR_CANCEL_TASK"
 # Statuses of actions taken by executor (events of task execution)
@@ -361,6 +362,13 @@ class Executor(multiprocessing.Process):
         else:
             self.logger.info("Invalid message %s is ignored", msg)
 
+    def _respond_is_alive(self):
+        """
+        Send "is alive" response to the scheduler with current timestamp.
+        """
+        if self.conn: # pragma: no branch
+            self.conn.send(Message(EXECUTOR_IS_ALIVE, datetime=util.utcnow(), name=self.name))
+
     def _get_new_task(self):
         """
         Extract new task from priority list of queues. If no tasks found for priority or priority
@@ -473,6 +481,8 @@ class Executor(multiprocessing.Process):
             return False
         self.logger.debug("Run iteration for %s, timeout=%s", self.name, self.timeout)
         try:
+            # send reponse to the scheduler that this executor is up and processing tasks
+            self._respond_is_alive()
             # check if there are any messages in connection, process one message per iteration
             if self.conn.poll():
                 self._process_message(self.conn.recv())
@@ -530,6 +540,8 @@ class Scheduler(object):
         self.pipe = {}
         # list of executors that are initialized
         self.executors = []
+        # list of is_alive statuses for executors
+        self.is_alive_statuses = {}
         # initialize priority queues, the lower number means higher priority
         self.task_queue_map = {
             const.PRIORITY_0: multiprocessing.Queue(),
@@ -571,6 +583,15 @@ class Scheduler(object):
         :param messages: list of messages EXECUTOR_TASK_FAILED
         """
         self.on_task_failed = None
+
+        """
+        .. note:: DeveloperApi
+
+        Invoked when executor sends 'is alive' reponse.
+
+        :param messages: list of messages EXECUTOR_IS_ALIVE
+        """
+        self.on_is_alive = self._update_is_alive
 
     def _get_metric(self, name):
         """
@@ -617,7 +638,7 @@ class Scheduler(object):
         Prepare single executor, this creates connection for executor and launches it as daemon
         process, and appends to executors list.
 
-        :param name: executor's name
+        :param name: executor's name (original, not final executor name)
         :return: created executor (it is already added to the list of executors)
         """
         main_conn, exc_conn = multiprocessing.Pipe()
@@ -627,6 +648,7 @@ class Scheduler(object):
         exc = clazz(name, exc_conn, self.task_queue_map, timeout=self.timeout, logger=self.log_func)
         self.executors.append(exc)
         self.pipe[exc.name] = main_conn
+        self.is_alive_statuses[exc.name] = util.utcnow()
         return exc
 
     def start(self):
@@ -685,6 +707,8 @@ class Scheduler(object):
                 conn.send(Message(EXECUTOR_CANCEL_TASK, task_id=task_id))
 
     # Thread is considered to be long-lived, and is terminated when scheduler is stopped.
+    # Method always provides list of messages to callback or empty list, it is guaranteed to provide
+    # list of valid messages.
     def _process_callback(self):
         msg_list = {}
         # sometimes thread can report that pipe is None, which might require lock before
@@ -693,6 +717,9 @@ class Scheduler(object):
             for conn in self.pipe.values():
                 while conn.poll():
                     message = conn.recv()
+                    # ignore non-valid messages
+                    if not isinstance(message, Message):
+                        continue
                     if message.status in msg_list:
                         msg_list[message.status].append(message)
                     else:
@@ -705,6 +732,28 @@ class Scheduler(object):
             self.on_task_failed.__call__(msg_list[EXECUTOR_TASK_FAILED])
         if self.on_task_cancelled and EXECUTOR_TASK_CANCELLED in msg_list:
             self.on_task_cancelled.__call__(msg_list[EXECUTOR_TASK_CANCELLED])
+        if self.on_is_alive and EXECUTOR_IS_ALIVE in msg_list:
+            self.on_is_alive.__call__(msg_list[EXECUTOR_IS_ALIVE])
+
+    def _update_is_alive(self, messages):
+        """
+        Update 'is alive' status for executors. Currently just updates datetime of message.
+
+        :param messages: list of Message instances with EXECUTOR_IS_ALIVE status
+        """
+        for msg in messages:
+            if "name" in msg.arguments:
+                exc_name = msg.arguments["name"]
+                self.is_alive_statuses[exc_name] = util.utcnow()
+                self.logger.debug("Updated 'is alive' status for executor %s", exc_name)
+
+    def get_is_alive_statuses(self):
+        """
+        Return copy of 'is alive' statuses.
+
+        :return: dictionary of 'executor -> datetime of update in UTC'
+        """
+        return self.is_alive_statuses.copy()
 
     def _prepare_polling_thread(self, name):
         """
