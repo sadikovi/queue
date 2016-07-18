@@ -14,6 +14,18 @@ class Status(object):
         """
         self.name = name
         self.desc = desc
+        self.pretty_name = "%s" % self.name
+
+    # pylint: disable=R0801,duplicate-code
+    def __str__(self):
+        return self.pretty_name
+
+    def __unicode__(self):
+        return self.pretty_name
+
+    def __repr__(self):
+        return self.pretty_name
+    # pylint: enable=R0801,duplicate-code
 
 # == System availability ==
 # Available status, e.g. when system is operational or idle

@@ -6,6 +6,8 @@ import subprocess
 import time
 import types
 import urllib2
+import src.const as const
+import src.context as context
 import src.scheduler as scheduler
 import src.util as util
 
@@ -113,6 +115,28 @@ def validate_main_class(value):
         raise ValueError("Invalid main class syntax '%s', expected package?.Class" % value)
     return groups.group(0)
 
+def validate_master_url(value):
+    """
+    Validate Spark master address, which has a format: spark://host:port.
+
+    :param value: unresolved master address value
+    :return: valid Spark master address as string
+    """
+    uri = util.URI(value)
+    if uri.scheme != "spark":
+        raise ValueError("Expected scheme to be 'spark' for master url: %s" % value)
+    return uri.url
+
+def validate_web_url(value):
+    """
+    Validate web url for Spark (Spark Web UI), this is also used to access Spark REST API.
+    Has format: http(s)://host:port.
+
+    :param value: unresolved web url value
+    :return: valid Spark web url as string
+    """
+    return util.URI(value).url
+
 class SparkStandaloneTask(scheduler.Task):
     """
     Special task to process Spark submission for standalone cluster manager. Essentially creates
@@ -198,10 +222,7 @@ class SparkStandaloneTask(scheduler.Task):
 
         :param value: new master url
         """
-        uri = util.URI(value)
-        if uri.scheme != "spark":
-            raise ValueError("Expected scheme to be 'spark' for master url: %s" % value)
-        self._master_url = uri.url
+        self._master_url = validate_master_url(value)
 
     @property
     def web_url(self):
@@ -219,7 +240,7 @@ class SparkStandaloneTask(scheduler.Task):
 
         :param value: new web url
         """
-        self._web_url = util.URI(value).url
+        self._web_url = validate_web_url(value)
 
     # == Shell process methods
     @property
@@ -389,3 +410,32 @@ class SparkStandaloneScheduler(scheduler.Scheduler):
         executor.master_url = self.master_url
         executor.web_url = self.web_url
         executor.max_available_slots = self.max_available_slots
+
+class SparkSession(context.Session):
+    """
+    Session context to manage launching tasks in Spark, and providing statistics.
+    """
+    def __init__(self, master_url, web_url, num_executors=1, timeout=1.0, logger=None):
+        self.master_url = validate_master_url(master_url)
+        self.web_url = validate_web_url(web_url)
+        self.num_executors = int(num_executors)
+        self.timeout = float(timeout)
+        self._scheduler = SparkStandaloneScheduler(self.master_url, self.web_url,
+                                                   self.num_executors, self.timeout, logger)
+
+    def system_code(self):
+        return SPARK_SYSTEM_CODE
+
+    def system_uri(self):
+        return util.URI(self.web_url, "Spark Web UI")
+
+    def status(self):
+        apps = applications(self.web_url)
+        if apps is None:
+            return const.SYSTEM_UNAVAILABLE
+        running = [app for app in apps if not app["completed"]]
+        return const.SYSTEM_BUSY if running else const.SYSTEM_AVAILABLE
+
+    @property
+    def scheduler(self):
+        return self._scheduler

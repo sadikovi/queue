@@ -35,9 +35,9 @@ class QueueServerCommand(Command):
         if not self.host:
             print "[ERROR] Host is required, use --host=* to set option"
             sys.exit(1)
-        # OCTOHAVEN_PORT
+        # QUEUE_PORT
         if not self.port:
-            print "[ERROR] Port is required, use --port=? to set option"
+            print "[ERROR] Port is required, use --port=* to set option"
             sys.exit(1)
         if not self.port.isdigit():
             print "[ERROR] Invalid port %s, should be integer" % self.port

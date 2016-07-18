@@ -9,6 +9,13 @@ class ConstSuite(unittest.TestCase):
         self.assertEqual(status.name, "name")
         self.assertEqual(status.desc, "desc")
 
+    def test_status_pretty_name(self):
+        status = const.Status("name", "desc")
+        pretty_name = u"name"
+        self.assertEqual("%s" % status, pretty_name)
+        self.assertEqual(status.__unicode__(), pretty_name)
+        self.assertEqual(status.__repr__(), pretty_name)
+
     def test_status_none(self):
         status = const.Status(None, None)
         self.assertEqual(status.name, None)

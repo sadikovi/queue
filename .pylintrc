@@ -47,7 +47,8 @@ persistent=yes
 # R0401(cyclic-import) we have too many of them
 # W0122(exec-used) exec is used in openshift
 # W0231(super-init-not-called)
-disable=C0111,I0011,I0012,W0142,R0201,E1103,W0122,E0401,E0611,W0201,W0231
+# R0801(duplicate-code)
+disable=C0111,I0011,I0012,W0142,R0201,E1103,W0122,E0401,E0611,W0201,W0231,R0801
 
 
 [REPORTS]

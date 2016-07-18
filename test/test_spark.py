@@ -3,6 +3,7 @@
 import unittest
 import mock
 import src.const as const
+import src.scheduler as scheduler
 import src.spark as spark
 
 # pylint: disable=W0212,protected-access
@@ -404,10 +405,58 @@ class SparkStandaloneSchedulerSuite(unittest.TestCase):
         self.assertEqual(mock_executor.web_url, self.web_url)
         self.assertEqual(mock_executor.max_available_slots, 5)
 
+class SparkSessionSuite(unittest.TestCase):
+    def setUp(self):
+        self.master_url = "spark://master:7077"
+        self.web_url = "http://localhost:8080"
+
+    def test_init(self):
+        with self.assertRaises(StandardError):
+            spark.SparkSession("abc", self.web_url)
+        with self.assertRaises(StandardError):
+            spark.SparkSession(self.master_url, "abc")
+        with self.assertRaises(ValueError):
+            spark.SparkSession(self.master_url, self.web_url, num_executors="abc")
+        with self.assertRaises(ValueError):
+            spark.SparkSession(self.master_url, self.web_url, num_executors=1, timeout="abc")
+        # valid instance
+        session = spark.SparkSession(self.master_url, self.web_url)
+        self.assertEqual(session.master_url, self.master_url)
+        self.assertEqual(session.web_url, self.web_url)
+        self.assertEqual(session.num_executors, 1)
+        self.assertEqual(session.timeout, 1.0)
+        self.assertNotEqual(session.scheduler, None)
+
+    def test_system_code(self):
+        session = spark.SparkSession(self.master_url, self.web_url)
+        self.assertEqual(session.system_code(), spark.SPARK_SYSTEM_CODE)
+
+    def test_system_uri(self):
+        session = spark.SparkSession(self.master_url, self.web_url)
+        self.assertEqual(session.system_uri().url, self.web_url)
+        self.assertEqual(session.system_uri().alias, "Spark Web UI")
+
+    def test_scheduler(self):
+        session = spark.SparkSession(self.master_url, self.web_url)
+        self.assertTrue(isinstance(session.scheduler, scheduler.Scheduler))
+
+    @mock.patch("src.spark.applications")
+    def test_status(self, mock_applications):
+        session = spark.SparkSession(self.master_url, self.web_url)
+        mock_applications.return_value = None
+        self.assertEqual(session.status(), const.SYSTEM_UNAVAILABLE)
+        mock_applications.return_value = []
+        self.assertEqual(session.status(), const.SYSTEM_AVAILABLE)
+        mock_applications.return_value = [{"completed": True}, {"completed": True}]
+        self.assertEqual(session.status(), const.SYSTEM_AVAILABLE)
+        mock_applications.return_value = [{"completed": True}, {"completed": False}]
+        self.assertEqual(session.status(), const.SYSTEM_BUSY)
+
 # Load test suites
 def suites():
     return [
         SparkStandaloneTaskSuite,
         SparkStandaloneExecutorSuite,
-        SparkStandaloneSchedulerSuite
+        SparkStandaloneSchedulerSuite,
+        SparkSessionSuite
     ]
