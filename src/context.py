@@ -37,3 +37,16 @@ class Session(object):
         :return: Scheduler implementation for the session
         """
         raise NotImplementedError("Not implemented")
+
+    @classmethod
+    def create(cls, conf, logger):
+        """
+        Create instance of session using dictionary of configuration options. All options are in
+        format "group.name", where "group" is option group, e.g. spark, and "name" is a name of
+        the option, e.g. spark.master.
+
+        :param conf: QueueConf instance
+        :param logger: logger function
+        :return: instance of session
+        """
+        raise NotImplementedError("Not implemented")

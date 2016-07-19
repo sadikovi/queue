@@ -31,6 +31,30 @@ EXECUTOR_TASK_SUCCEEDED = "EXECUTOR_TASK_SUCCEEDED"
 EXECUTOR_TASK_FAILED = "EXECUTOR_TASK_FAILED"
 EXECUTOR_TASK_CANCELLED = "EXECUTOR_TASK_CANCELLED"
 
+def validate_timeout(value):
+    """
+    Validate timeout, check that it is greater or equal minimum timeout of 100ms.
+
+    :param timeout: raw timeout
+    :return: validated timeout
+    """
+    timeout = float(value)
+    if timeout < 0.1:
+        raise AttributeError("Invalid timeout %s, expected timeout >= 0.1" % timeout)
+    return timeout
+
+def validate_num_executors(value):
+    """
+    Validate number of executors created, should be at least 1 executor.
+
+    :param num_executors: raw number of executors
+    :return: validated value
+    """
+    num_executors = int(value)
+    if num_executors <= 0:
+        raise AttributeError("Invalid num executors %s, expected executors >= 1" % num_executors)
+    return num_executors
+
 class Task(object):
     """
     Task class is a public API for creating executable code within executor TaskThread. Must be
@@ -327,7 +351,7 @@ class Executor(multiprocessing.Process):
         self.daemon = True
         self.conn = conn
         self.task_queue_map = task_queue_map
-        self.timeout = timeout
+        self.timeout = validate_timeout(timeout)
         # if no logger defined create new logger and add null handler
         self.log_func = logger
         self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
@@ -531,8 +555,8 @@ class Scheduler(object):
         :param logger: executor's logger
         """
         self.name = "%s" % type(self).__name__
-        self.num_executors = int(num_executors)
-        self.timeout = timeout
+        self.num_executors = validate_num_executors(num_executors)
+        self.timeout = validate_timeout(timeout)
         self.log_func = logger
         self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
 

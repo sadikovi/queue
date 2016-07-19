@@ -25,6 +25,24 @@ class SchedulerModuleSuite(unittest.TestCase):
         self.assertEqual(scheduler.EXECUTOR_TASK_FAILED, "EXECUTOR_TASK_FAILED")
         self.assertEqual(scheduler.EXECUTOR_TASK_CANCELLED, "EXECUTOR_TASK_CANCELLED")
 
+    def test_validate_timeout(self):
+        with self.assertRaises(TypeError):
+            scheduler.validate_timeout(None)
+        with self.assertRaises(ValueError):
+            scheduler.validate_timeout("abc")
+        with self.assertRaises(AttributeError):
+            scheduler.validate_timeout(0.0)
+        self.assertEqual(scheduler.validate_timeout(0.5), 0.5)
+
+    def test_validate_num_executors(self):
+        with self.assertRaises(TypeError):
+            scheduler.validate_num_executors(None)
+        with self.assertRaises(ValueError):
+            scheduler.validate_num_executors("abc")
+        with self.assertRaises(AttributeError):
+            scheduler.validate_num_executors(0)
+        self.assertEqual(scheduler.validate_num_executors(1), 1)
+
 class TaskSuite(unittest.TestCase):
     def setUp(self):
         self.task = scheduler.Task()

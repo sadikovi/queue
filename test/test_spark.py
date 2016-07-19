@@ -419,6 +419,10 @@ class SparkSessionSuite(unittest.TestCase):
             spark.SparkSession(self.master_url, self.web_url, num_executors="abc")
         with self.assertRaises(ValueError):
             spark.SparkSession(self.master_url, self.web_url, num_executors=1, timeout="abc")
+        with self.assertRaises(AttributeError):
+            spark.SparkSession(self.master_url, self.web_url, num_executors=0)
+        with self.assertRaises(AttributeError):
+            spark.SparkSession(self.master_url, self.web_url, num_executors=1, timeout=0.0)
         # valid instance
         session = spark.SparkSession(self.master_url, self.web_url)
         self.assertEqual(session.master_url, self.master_url)
@@ -451,6 +455,17 @@ class SparkSessionSuite(unittest.TestCase):
         self.assertEqual(session.status(), const.SYSTEM_AVAILABLE)
         mock_applications.return_value = [{"completed": True}, {"completed": False}]
         self.assertEqual(session.status(), const.SYSTEM_BUSY)
+
+    def test_create(self):
+        conf = mock.Mock()
+        conf.getConfString.side_effect = [self.master_url, self.web_url]
+        conf.getConfInt.return_value = 1
+        conf.getConfFloat.return_value = 1.0
+        session = spark.SparkSession.create(conf, mock.Mock())
+        self.assertEqual(session.master_url, self.master_url)
+        self.assertEqual(session.web_url, self.web_url)
+        self.assertEqual(session.num_executors, 1)
+        self.assertEqual(session.timeout, 1.0)
 
 # Load test suites
 def suites():

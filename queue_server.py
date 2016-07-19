@@ -19,6 +19,12 @@ if not (sys.platform.startswith("darwin") or sys.platform.startswith("linux")):
 # Add dependencies to the path
 sys.path.insert(1, LIB_PATH)
 
+# Load src modules (need to load after lib path is added to sys.path)
+# pylint: disable=C0413,wrong-import-position
+import src.queue as qservice
+import src.const as qconst
+# pylint: enable=C0413,wrong-import-position
+
 def create_cli_parser():
     """
     Create CLI parser, we expect "host" and "port" options to launch service, the rest should be
@@ -31,10 +37,20 @@ def create_cli_parser():
     parser = argparse.ArgumentParser(description="Starts Queue scheduler service")
     parser.add_argument("--host", required=True, help="host to bind application to")
     parser.add_argument("--port", required=True, type=int, help="port to bind application to")
+    # add group for generic queue options
+    generic_group = parser.add_argument_group("generic", "generic arguments for all groups")
+    generic_group.add_argument(
+        "--%s" % qconst.OPT_NUM_PARALLEL_TASKS, default=1, type=int, metavar="NUM",
+        help="number of tasks to launch in parallel (default: 1)")
+    generic_group.add_argument(
+        "--%s" % qconst.OPT_SCHEDULER_TIMEOUT, default=1.0, type=float, metavar="SECONDS",
+        help="scheduler timeout in seconds (default: 1.0)")
     # add group for Spark options
     spark_group = parser.add_argument_group("spark", "arguments to create Spark session/scheduler")
-    spark_group.add_argument("--spark.master", default="", help="Spark master address")
-    spark_group.add_argument("--spark.web", default="", help="Spark web (REST) address")
+    spark_group.add_argument(
+        "--%s" % qconst.OPT_SPARK_MASTER, default="", help="Spark master address (default: '')")
+    spark_group.add_argument(
+        "--%s" % qconst.OPT_SPARK_WEB, default="", help="Spark web (REST) address (default: '')")
     return parser
 
 def main():
@@ -55,8 +71,7 @@ def main():
     / /_/ / /_/ /  __/ /_/ /  __/
     \___\_\__,_/\___/\__,_/\___/  version %s
     """ % VERSION
-    import src.queue
-    src.queue.start(host=namespace.host, port=namespace.port, args=args)
+    qservice.start(host=namespace.host, port=namespace.port, args=args)
 
 if __name__ == "__main__":
     main()

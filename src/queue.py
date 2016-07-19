@@ -4,6 +4,8 @@ import os
 import cherrypy
 from jinja2 import Environment, FileSystemLoader
 from init import STATIC_PATH
+import src.spark as spark
+import src.util as util
 
 # Loading jinja templates, we bind web directory to serve as collection of views
 env = Environment(loader=FileSystemLoader(os.path.join(STATIC_PATH, "view")))
@@ -21,7 +23,6 @@ class QueueController(object):
         :param args: raw arguments dictionary
         :param logger: logger function to use
         """
-        import src.util as util
         self.name = "QUEUE"
         self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
         # parse queue configuration based on additional arguments passed
@@ -30,6 +31,18 @@ class QueueController(object):
         # log options processed
         all_options = ["  %s -> %s" % (key, value) for key, value in conf.copy().items()]
         self.logger.debug("Configuration:\n%s" % "\n".join(all_options))
+
+    def _create_session(self, conf):
+        """
+        Create new session based on QueueConf.
+
+        :param conf: QueueConf instance
+        :return: Session instance
+        """
+        if not isinstance(conf, util.QueueConf):
+            raise AttributeError("Invalid configuration, got %s" % conf)
+        # currently we only have one session for Spark, default logger is used for now
+        return spark.SparkSession.create(conf, None)
 
     @cherrypy.expose
     def index(self):

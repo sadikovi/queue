@@ -418,8 +418,8 @@ class SparkSession(context.Session):
     def __init__(self, master_url, web_url, num_executors=1, timeout=1.0, logger=None):
         self.master_url = validate_master_url(master_url)
         self.web_url = validate_web_url(web_url)
-        self.num_executors = int(num_executors)
-        self.timeout = float(timeout)
+        self.num_executors = scheduler.validate_num_executors(num_executors)
+        self.timeout = scheduler.validate_timeout(timeout)
         self._scheduler = SparkStandaloneScheduler(self.master_url, self.web_url,
                                                    self.num_executors, self.timeout, logger)
 
@@ -439,3 +439,11 @@ class SparkSession(context.Session):
     @property
     def scheduler(self):
         return self._scheduler
+
+    @classmethod
+    def create(cls, conf, logger):
+        timeout = conf.getConfFloat(const.OPT_SCHEDULER_TIMEOUT)
+        num_parallel_tasks = conf.getConfInt(const.OPT_NUM_PARALLEL_TASKS)
+        spark_master = conf.getConfString(const.OPT_SPARK_MASTER)
+        spark_web = conf.getConfString(const.OPT_SPARK_WEB)
+        return cls(spark_master, spark_web, num_parallel_tasks, timeout, logger)

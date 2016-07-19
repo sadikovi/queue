@@ -69,6 +69,12 @@ class ConstSuite(unittest.TestCase):
         self.assertEqual(const.PRIORITY_1, 1)
         self.assertEqual(const.PRIORITY_2, 2)
 
+    def test_conf_options(self):
+        self.assertEqual(const.OPT_NUM_PARALLEL_TASKS, "queue.num.parallel.tasks")
+        self.assertEqual(const.OPT_SCHEDULER_TIMEOUT, "queue.scheduler.timeout")
+        self.assertEqual(const.OPT_SPARK_MASTER, "spark.master")
+        self.assertEqual(const.OPT_SPARK_WEB, "spark.web")
+
 # Load test suites
 def suites():
     return [

@@ -24,6 +24,10 @@ class SessionSuite(unittest.TestCase):
             test = self.session.scheduler
             self.assertTrue(test is None)
 
+    def test_create(self):
+        with self.assertRaises(NotImplementedError):
+            context.Session.create({"a": 1}, None)
+
 # Load test suites
 def suites():
     return [
