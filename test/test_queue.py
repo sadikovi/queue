@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 
 import cherrypy
+import mock
 import src.queue as queue
 from test.cptestcase import BaseCherryPyTestCase
 
 def setUpModule():
-    cherrypy.tree.mount(queue.QueueController(), "/", queue.getConf())
+    controller = queue.QueueController(args={}, logger=mock.Mock())
+    cherrypy.tree.mount(controller, "/", queue.getConf())
     cherrypy.engine.start()
 setup_module = setUpModule
 

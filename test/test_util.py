@@ -188,9 +188,101 @@ class URISuite(unittest.TestCase):
         self.assertEqual(self.uri1.alias, "Spark UI")
         self.assertEqual(self.uri2.alias, "spark://sandbox:7077")
 
+class QueueConfSuite(unittest.TestCase):
+    def test_set_conf(self):
+        conf = util.QueueConf()
+        with self.assertRaises(AttributeError):
+            conf.setConf(None, None)
+        with self.assertRaises(AttributeError):
+            conf.setConf("", None)
+        # non-empty key and None value should succeed
+        conf.setConf("key", None)
+        self.assertEqual(conf.getConf("key"), None)
+
+    def test_set_all_conf(self):
+        conf = util.QueueConf()
+        with self.assertRaises(TypeError):
+            conf.setAllConf(None)
+        with self.assertRaises(TypeError):
+            conf.setAllConf([])
+        conf.setAllConf({"a": 1, "b": True})
+        self.assertEqual(conf.getConf("a"), 1)
+        self.assertEqual(conf.getConf("b"), True)
+
+    def test_get_conf(self):
+        conf = util.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", None)
+        self.assertEqual(conf.getConf("a"), 1)
+        self.assertEqual(conf.getConf("b"), None)
+        self.assertEqual(conf.getConf("c"), None)
+
+    def test_get_conf_string(self):
+        conf = util.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", None)
+        self.assertEqual(conf.getConfString("a"), "1")
+        self.assertEqual(conf.getConfString("b"), "None")
+        self.assertEqual(conf.getConfString("c"), "None")
+
+    def test_get_conf_boolean(self):
+        conf = util.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", None)
+        conf.setConf("c", False)
+        self.assertEqual(conf.getConfBoolean("a"), True)
+        self.assertEqual(conf.getConfBoolean("b"), False)
+        self.assertEqual(conf.getConfBoolean("c"), False)
+
+    def test_get_conf_int(self):
+        conf = util.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", "2")
+        conf.setConf("c", None)
+        conf.setConf("d", False)
+        self.assertEqual(conf.getConfInt("a"), 1)
+        self.assertEqual(conf.getConfInt("b"), 2)
+        with self.assertRaises(TypeError):
+            conf.getConfInt("c")
+        self.assertEqual(conf.getConfInt("d"), 0)
+
+    def test_get_conf_float(self):
+        conf = util.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", "2.0")
+        conf.setConf("c", None)
+        conf.setConf("d", False)
+        self.assertEqual(conf.getConfFloat("a"), 1.0)
+        self.assertEqual(conf.getConfFloat("b"), 2.0)
+        with self.assertRaises(TypeError):
+            conf.getConfFloat("c")
+        self.assertEqual(conf.getConfFloat("d"), 0.0)
+
+    def test_contains(self):
+        conf = util.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", None)
+        self.assertEqual(conf.contains("a"), True)
+        self.assertEqual(conf.contains("b"), True)
+        self.assertEqual(conf.contains("c"), False)
+
+    def test_parse(self):
+        self.assertEqual(util.QueueConf.parse(None), {})
+        self.assertEqual(util.QueueConf.parse(""), {})
+        self.assertEqual(util.QueueConf.parse("a=1 b=2 c='3 4'"), {"a": "1", "b": "2", "c": "3 4"})
+        self.assertEqual(util.QueueConf.parse("a=1 b= c"), {"a": "1", "b": ""})
+        self.assertEqual(util.QueueConf.parse("a=1 b=2=3"), {"a": "1", "b": "2=3"})
+
+    def test_copy(self):
+        conf = util.QueueConf()
+        opts = {"a": 1, "b": True, "c": 1.0}
+        conf.setAllConf(opts)
+        self.assertEqual(conf.copy(), opts)
+
 # Load test suites
 def suites():
     return [
         UtilSuite,
-        URISuite
+        URISuite,
+        QueueConfSuite
     ]

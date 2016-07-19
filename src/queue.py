@@ -14,6 +14,23 @@ Queue server main entry point. It defines all URLs that are used either for stat
 REST API. Note that entire configuration for server is set in here.
 """
 class QueueController(object):
+    def __init__(self, args, logger=None):
+        """
+        Create instance of application controller.
+
+        :param args: raw arguments dictionary
+        :param logger: logger function to use
+        """
+        import src.util as util
+        self.name = "QUEUE"
+        self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
+        # parse queue configuration based on additional arguments passed
+        conf = util.QueueConf()
+        conf.setAllConf(args)
+        # log options processed
+        all_options = ["  %s -> %s" % (key, value) for key, value in conf.copy().items()]
+        self.logger.debug("Configuration:\n%s" % "\n".join(all_options))
+
     @cherrypy.expose
     def index(self):
         template = env.get_template(TEMPLATE_HOME)
@@ -33,7 +50,15 @@ def getConf(): # pragma: no cover
     return conf
 
 # Start server
-def start(host="127.0.0.1", port=8080): # pragma: no cover
+def start(host="127.0.0.1", port=8080, args=None): # pragma: no cover
+    """
+    Start service.
+    Additional arguments will be parsed in controller.
+
+    :param host: host to bind
+    :param port: port to bind
+    :param args: additional arguments as dict
+    """
     cherrypy.config.update({"server.socket_host": host})
     cherrypy.config.update({"server.socket_port": port})
-    cherrypy.quickstart(QueueController(), "/", getConf())
+    cherrypy.quickstart(QueueController(args), "/", getConf())

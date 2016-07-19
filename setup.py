@@ -19,35 +19,6 @@ if not (sys.platform.startswith("darwin") or sys.platform.startswith("linux")):
 # Add dependencies to the path
 sys.path.insert(1, LIB_PATH)
 
-class QueueServerCommand(Command):
-    description = "Start Queue server"
-    user_options = [
-        ("host=", "h", "socket host"),
-        ("port=", "p", "socket port")
-    ]
-
-    def initialize_options(self):
-        self.host = None
-        self.port = None
-
-    def finalize_options(self):
-        # QUEUE_HOST
-        if not self.host:
-            print "[ERROR] Host is required, use --host=* to set option"
-            sys.exit(1)
-        # QUEUE_PORT
-        if not self.port:
-            print "[ERROR] Port is required, use --port=* to set option"
-            sys.exit(1)
-        if not self.port.isdigit():
-            print "[ERROR] Invalid port %s, should be integer" % self.port
-            sys.exit(1)
-        self.port = int(self.port)
-
-    def run(self):
-        import src.queue as queue
-        queue.start(host=self.host, port=self.port)
-
 class IntegrationTestCommand(Command):
     description = "Run integration tests"
     user_options = []
@@ -74,7 +45,6 @@ setup(
     license="Apache License 2.0",
     test_suite="test",
     cmdclass={
-        "queue_server": QueueServerCommand,
         "run_it": IntegrationTestCommand
     }
 )
