@@ -478,6 +478,12 @@ class SchedulerSuite(unittest.TestCase):
         with self.assertRaises(ValueError):
             scheduler.Scheduler("abc", 0.5, self.logger)
 
+    def test_get_num_executors(self):
+        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        self.assertEqual(sched.get_num_executors(), 3)
+        sched = scheduler.Scheduler(1, 0.5, self.logger)
+        self.assertEqual(sched.get_num_executors(), 1)
+
     def test_get_metric(self):
         sched = scheduler.Scheduler(3, 0.5, self.logger)
         self.assertEqual(sched._get_metric("a"), None)

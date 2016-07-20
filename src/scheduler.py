@@ -617,6 +617,14 @@ class Scheduler(object):
         """
         self.on_is_alive = self._update_is_alive
 
+    def get_num_executors(self):
+        """
+        Get requested number of executors.
+
+        :return: number of executors requested
+        """
+        return self.num_executors
+
     def _get_metric(self, name):
         """
         Get metric for name.
