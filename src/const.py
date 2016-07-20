@@ -64,5 +64,7 @@ PRIORITIES = [PRIORITY_0, PRIORITY_1, PRIORITY_2]
 # == Configuration options for session ==
 OPT_NUM_PARALLEL_TASKS = "queue.num.parallel.tasks"
 OPT_SCHEDULER_TIMEOUT = "queue.scheduler.timeout"
+OPT_WORKING_DIR = "queue.working.directory"
+OPT_SERVICE_DIR = "queue.service.directory"
 OPT_SPARK_MASTER = "spark.master"
 OPT_SPARK_WEB = "spark.web"

@@ -45,6 +45,12 @@ def create_cli_parser():
     generic_group.add_argument(
         "--%s" % qconst.OPT_SCHEDULER_TIMEOUT, default=1.0, type=float, metavar="SECONDS",
         help="scheduler timeout in seconds (default: 1.0)")
+    generic_group.add_argument(
+        "--%s" % qconst.OPT_WORKING_DIR, default="", metavar="WORK",
+        help="application working directory (logs, job artifacts), must have read/write access")
+    generic_group.add_argument(
+        "--%s" % qconst.OPT_SERVICE_DIR, default="", metavar="SERVICE",
+        help="service directory to traverse (jars, text files), must have read access")
     # add group for Spark options
     spark_group = parser.add_argument_group("spark", "arguments to create Spark session/scheduler")
     spark_group.add_argument(

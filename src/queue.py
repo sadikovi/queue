@@ -4,6 +4,7 @@ import os
 import cherrypy
 from jinja2 import Environment, FileSystemLoader
 from init import STATIC_PATH
+import src.const as const
 import src.spark as spark
 import src.util as util
 
@@ -32,6 +33,9 @@ class QueueController(object):
         # log options processed
         all_options = ["  %s -> %s" % (key, value) for key, value in conf.copy().items()]
         self.logger.debug("Configuration:\n%s" % "\n".join(all_options))
+        # resolve options either directly or through session and other services
+        self.working_dir = util.readwriteDirectory(conf.getConfString(const.OPT_WORKING_DIR))
+        self.service_dir = util.readonlyDirectory(conf.getConfString(const.OPT_SERVICE_DIR))
         self.session = self._create_session(conf)
 
     def _create_session(self, conf):
@@ -53,6 +57,9 @@ class QueueController(object):
         :return: dict of statuses and metrics
         """
         session_status = {}
+        # generic directories (displayed as part of the session)
+        session_status["working_dir"] = self.working_dir
+        session_status["service_dir"] = self.service_dir
         # session metrics
         session_status["code"] = self.session.system_code()
         # system URI can be None
@@ -87,6 +94,12 @@ class QueueController(object):
         self.session.scheduler.start_maintenance()
         self.session.scheduler.start()
 
+    def stop(self):
+        """
+        Stop all session services.
+        """
+        self.session.scheduler.stop()
+
 # Configuration setup for application except host and port
 def getConf(): # pragma: no cover
     conf = {
@@ -113,5 +126,6 @@ def start(host="127.0.0.1", port=8080, args=None): # pragma: no cover
     cherrypy.config.update({"server.socket_host": host})
     cherrypy.config.update({"server.socket_port": port})
     controller = QueueController(args)
-    controller.start()
+    cherrypy.engine.subscribe("start", controller.start)
+    cherrypy.engine.subscribe("stop", controller.stop)
     cherrypy.quickstart(controller, "/", getConf())

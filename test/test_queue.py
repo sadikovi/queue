@@ -9,8 +9,11 @@ import src.spark as spark
 import src.util as util
 from test.cptestcase import BaseCherryPyTestCase
 
-def setUpModule():
-    # for testing web-service functionality only we mock session in controller
+@mock.patch("src.queue.util")
+def setUpModule(mock_util):
+    # for testing web-service functionality only we mock session, util in controller
+    mock_util.readwriteDirectory.return_value = "/None"
+    mock_util.readonlyDirectory.return_value = "/None"
     with mock.patch.object(queue.QueueController, "_create_session", return_value=mock.Mock()):
         controller = queue.QueueController(args={}, logger=mock.Mock())
         cherrypy.tree.mount(controller, "/", queue.getConf())
@@ -48,14 +51,16 @@ test_session.system_uri.return_value = util.URI("http://local:8080", "link")
 test_session.status.return_value = const.SYSTEM_BUSY
 test_session.scheduler = test_scheduler
 
-# pylint: disable=W0212,protected-access
+# pylint: disable=W0212,protected-access,W0613,unused-argument
 class QueueControllerSuite(unittest.TestCase):
     def setUp(self):
         test_scheduler.reset_mock()
         test_session.reset_mock()
 
+    @mock.patch("src.queue.util.readwriteDirectory")
+    @mock.patch("src.queue.util.readonlyDirectory")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_create_session(self, mock_session): # pylint: disable=W0613,unused-argument
+    def test_create_session(self, mock_session, mock_r, mock_rw):
         controller = queue.QueueController(args={}, logger=mock.Mock())
         with self.assertRaises(AttributeError):
             controller._create_session(None)
@@ -65,8 +70,10 @@ class QueueControllerSuite(unittest.TestCase):
         session = controller._create_session(conf)
         self.assertNotEqual(session, None)
 
+    @mock.patch("src.queue.util.readwriteDirectory")
+    @mock.patch("src.queue.util.readonlyDirectory")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_get_status_dict(self, mock_session): # pylint: disable=W0613,unused-argument
+    def test_get_status_dict(self, mock_session, mock_r, mock_rw):
         controller = queue.QueueController(args={}, logger=mock.Mock())
         metrics = controller.get_status_dict()
         self.assertEqual(metrics["code"], "TEST")
@@ -78,13 +85,15 @@ class QueueControllerSuite(unittest.TestCase):
         self.assertTrue("ex1" in metrics["scheduler"]["is_alive_statuses"])
         self.assertTrue("ex2" in metrics["scheduler"]["is_alive_statuses"])
 
+    @mock.patch("src.queue.util.readwriteDirectory")
+    @mock.patch("src.queue.util.readonlyDirectory")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_start(self, mock_session): # pylint: disable=W0613,unused-argument
+    def test_start(self, mock_session, mock_r, mock_rw):
         controller = queue.QueueController(args={}, logger=mock.Mock())
         controller.start()
         test_scheduler.start_maintenance.assert_called_once_with()
         test_scheduler.start.assert_called_once_with()
-# pylint: enable=W0212,protected-access
+# pylint: enable=W0212,protected-access,W0613,unused-argument
 
 # Load test suites
 def suites():
