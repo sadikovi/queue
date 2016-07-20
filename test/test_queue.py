@@ -72,7 +72,7 @@ class QueueControllerSuite(unittest.TestCase):
         self.assertEqual(metrics["code"], "TEST")
         self.assertEqual(metrics["url"], {"href": "http://local:8080", "alias": "link"})
         self.assertEqual(metrics["status"], const.SYSTEM_BUSY)
-        self.assertEqual(metrics["scheduler"]["executor_class"], spark.SparkStandaloneExecutor)
+        self.assertEqual(metrics["scheduler"]["executor_class"], "SparkStandaloneExecutor")
         self.assertEqual(metrics["scheduler"]["num_executors"], 5)
         self.assertEqual(metrics["scheduler"]["metrics"], {"a": 1, "b": 2})
         self.assertTrue("ex1" in metrics["scheduler"]["is_alive_statuses"])

@@ -10,6 +10,7 @@ import src.util as util
 # Loading jinja templates, we bind web directory to serve as collection of views
 env = Environment(loader=FileSystemLoader(os.path.join(STATIC_PATH, "view")))
 TEMPLATE_HOME = "home.html"
+TEMPLATE_STATUS = "status.html"
 
 """
 Queue server main entry point. It defines all URLs that are used either for static content or
@@ -62,7 +63,7 @@ class QueueController(object):
         session_status["scheduler"] = {
             "name": type(self.session.scheduler).__name__,
             "num_executors": self.session.scheduler.get_num_executors(),
-            "executor_class": self.session.scheduler.executor_class(),
+            "executor_class": self.session.scheduler.executor_class().__name__,
             "metrics": self.session.scheduler.get_metrics(),
             "is_alive_statuses": self.session.scheduler.get_is_alive_statuses()
         }
@@ -72,6 +73,12 @@ class QueueController(object):
     def index(self):
         template = env.get_template(TEMPLATE_HOME)
         return template.render()
+
+    @cherrypy.expose
+    def status(self):
+        import datetime
+        template = env.get_template(TEMPLATE_STATUS)
+        return template.render(self.get_status_dict())
 
     def start(self):
         """

@@ -14,32 +14,17 @@
     <link rel="stylesheet" href="/static/index.min.css">
   </head>
   <body>
+    <header class="masthead">
+      <div class="container">
+        <nav class="masthead-nav">
+          <a {% block index_active %}{% endblock %} href="/">Queue</a>
+          <a {% block status_active %}{% endblock %} href="/status">Status</a>
+        </nav>
+      </div>
+    </header>
     <div class="page large margin-bottom container">
       <div class="columns">
-        <div class="three-fourths column">
-          Main data
-        </div>
-        <div class="one-fourth column">
-          <nav class="menu">
-            <div class="menu-heading">Monitor</div>
-            <div class="menu-item">
-              <span class="octicon octicon-server"></span>
-              <span class="text-mute">Spark cluster</span>
-            </div>
-            <div class="menu-item">
-              <span class="octicon octicon-eye"></span>
-              <span class="text-green">Available</span>
-            </div>
-            <div class="menu-item">
-              <span class="octicon octicon-link"></span>
-              <a href="#">localhost:8080</a>
-            </div>
-            <div class="menu-heading"></div>
-            <div class="menu-item text-mute">
-              Queue v0.0.1 &middot; Apache 2.0
-            </div>
-          </nav>
-        </div>
+        {% block columns %}{% endblock %}
       </div>
     </div>
   </body>

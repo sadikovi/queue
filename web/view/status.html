@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+<!-- Page title, will be combined with 'Queue' name -->
+{% block title %}Status{% endblock %}
+<!-- Masthead selection status -->
+{% block status_active %}class="active"{% endblock %}
+{% block columns %}
+<div class="three-fourths column">
+  <div class="container">
+    <h1 class="text-thin">Session</h1>
+    <div class="segments">
+      <div class="segment">
+        <div class="columns">
+          <div class="one-third column">Code</div>
+          <div class="two-thirds column">{{ code }}</div>
+        </div>
+      </div>
+      <div class="segment">
+        <div class="columns">
+          <div class="one-third column">Status</div>
+          <div class="two-thirds column">{{ status }}</div>
+        </div>
+      </div>
+      <div class="segment">
+        <div class="columns">
+          <div class="one-third column">URL</div>
+          <div class="two-thirds column">
+            {% if url %}
+            <a href="{{ url.href }}">{{ url.alias }}</a>
+            {% else %}
+            <span>None</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="container">
+    <h1 class="text-thin">Scheduler</h1>
+    <div class="segments">
+      <div class="segment">
+        <div class="columns">
+          <div class="one-third column">Name</div>
+          <div class="two-thirds column">{{ scheduler.name }}</div>
+        </div>
+      </div>
+      <div class="segment">
+        <div class="columns">
+          <div class="one-third column">Number of executors</div>
+          <div class="two-thirds column">{{ scheduler.num_executors }}</div>
+        </div>
+      </div>
+      <div class="segment">
+        <div class="columns">
+          <div class="one-third column">Executor class</div>
+          <div class="two-thirds column">{{ scheduler.executor_class }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="container">
+    <h1 class="text-thin">Metrics</h1>
+    <div class="segments">
+      {% for key, value in scheduler.metrics.items() %}
+      <div class="segment">
+        <div class="columns">
+          <div class="one-third column">{{ key }}</div>
+          <div class="two-thirds column"><code>{{ value }}</code></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="container">
+    <h1 class="text-thin">Ping status</h1>
+    <div class="segments">
+      {% for key, value in scheduler.is_alive_statuses.items() %}
+      <div class="segment">
+        <div class="columns">
+          <div class="one-third column">{{ key }}</div>
+          <div class="two-thirds column">{{ value }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

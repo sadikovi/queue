@@ -1,0 +1,53 @@
+.masthead {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  background-color: $brand-gray-dark;
+
+  a {
+    color: rgba(255, 255, 255, 0.5);
+
+    &:hover {
+      color: #fff;
+      text-decoration: none;
+    }
+  }
+}
+
+.masthead-nav {
+  margin-top: 1rem;
+  font-size: 1rem;
+
+  a {
+    display: inline-block;
+
+    &:not(:last-child) {
+      margin-right: 1.25rem;
+    }
+  }
+
+  .active {
+    color: #fff;
+    font-weight: 500;
+  }
+}
+
+@media (min-width: 34em) {
+  .masthead {
+    text-align: left;
+  }
+}
+
+@media (max-width: 34em) {
+  .masthead-nav {
+    padding-top: 1rem;
+    border-top: 0.075rem solid rgba(255, 255, 255, 0.25);
+  }
+}
+
+@media (min-width: 34em) {
+  .masthead-nav {
+    margin-top: .5rem;
+  }
+}
