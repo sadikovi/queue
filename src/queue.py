@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import inspect
 import os
 import cherrypy
 from jinja2 import Environment, FileSystemLoader
@@ -50,6 +51,15 @@ class QueueController(object):
         # currently we only have one session for Spark, default logger is used for now
         return spark.SparkSession.create(conf, None)
 
+    def _pretty_name(self, obj):
+        """
+        Pretty name for object that can be either class or instance of a class.
+
+        :param obj: class or instance of class
+        :return: string representation of obj
+        """
+        return obj.__name__ if inspect.isclass(obj) else type(obj).__name__
+
     def get_status_dict(self):
         """
         Get dictionary of all statuses, metrics from session and scheduler.
@@ -70,7 +80,7 @@ class QueueController(object):
         session_status["scheduler"] = {
             "name": type(self.session.scheduler).__name__,
             "num_executors": self.session.scheduler.get_num_executors(),
-            "executor_class": self.session.scheduler.executor_class().__name__,
+            "executor_class": self._pretty_name(self.session.scheduler.executor_class()),
             "metrics": self.session.scheduler.get_metrics(),
             "is_alive_statuses": self.session.scheduler.get_is_alive_statuses()
         }
@@ -83,7 +93,6 @@ class QueueController(object):
 
     @cherrypy.expose
     def status(self):
-        import datetime
         template = env.get_template(TEMPLATE_STATUS)
         return template.render(self.get_status_dict())
 

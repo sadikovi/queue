@@ -297,31 +297,35 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         calls = [mock.call("/tmp/work/stdout", "wb"), mock.call("/tmp/work/stderr", "wb")]
         mock_util_open.assert_has_calls(calls)
 
-    def test_run_no_ps(self):
+    @mock.patch("src.spark.time.sleep")
+    def test_run_no_ps(self, mock_sleep):
         task = spark.SparkStandaloneTask("123", const.PRIORITY_0, logger=self.logger)
         task.launch_process = mock.Mock()
         with self.assertRaises(AttributeError):
             task.run()
+        mock_sleep.assert_called_with(task.timeout)
 
+    @mock.patch("src.spark.time.sleep")
     @mock.patch("src.spark.subprocess.Popen")
-    @mock.patch("src.spark.time")
-    def test_run_exit_code_ok(self, mock_time, mock_popen):
+    def test_run_exit_code_ok(self, mock_popen, mock_sleep):
         popen_instance = mock.Mock()
         popen_instance.poll.side_effect = [None, None, 0]
         mock_popen.return_value = popen_instance
         task = spark.SparkStandaloneTask("123", const.PRIORITY_0, logger=self.logger)
         task.run()
-        self.assertEqual(mock_time.sleep.call_count, 3)
-        mock_time.sleep.assert_called_with(task.timeout)
+        self.assertEqual(mock_sleep.call_count, 3)
+        mock_sleep.assert_called_with(task.timeout)
 
+    @mock.patch("src.spark.time.sleep")
     @mock.patch("src.spark.subprocess.Popen")
-    def test_run_exit_code_fail(self, mock_popen):
+    def test_run_exit_code_fail(self, mock_popen, mock_sleep):
         popen_instance = mock.Mock()
         popen_instance.poll.side_effect = [None, None, 127]
         mock_popen.return_value = popen_instance
         task = spark.SparkStandaloneTask("123", const.PRIORITY_0, logger=self.logger)
         with self.assertRaises(IOError):
             task.run()
+        mock_sleep.assert_called_with(task.timeout)
 
     def test_cancel_no_ps(self):
         task = spark.SparkStandaloneTask("123", const.PRIORITY_0, logger=self.logger)

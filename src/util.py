@@ -94,7 +94,7 @@ def open(path, mode):
     :return: File object based on path and mode
     """
     # pylint: disable=W0622,redefined-builtin
-    return open(path, mode)
+    return open(path, mode) # pragma: no cover
     # pylint: enable=W0622,redefined-builtin
 
 # == REST API and URI related methods and classes ===
