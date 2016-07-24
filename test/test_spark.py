@@ -477,8 +477,9 @@ class SparkSessionSuite(unittest.TestCase):
         self.assertEqual(session.num_executors, 1)
         self.assertEqual(session.timeout, 1.0)
 
+    @mock.patch("src.spark.util.readwriteDirectory")
     @mock.patch("src.spark.util.mkdir")
-    def test_create_task(self, mock_mkdir):
+    def test_create_task(self, mock_mkdir, mock_dir):
         session = spark.SparkSession(self.master_url, self.web_url, self.working_dir)
         with self.assertRaises(AttributeError):
             session.create_task(None)
@@ -493,11 +494,14 @@ class SparkSessionSuite(unittest.TestCase):
         sub = mock.create_autospec(submission.Submission, is_deleted=False, is_template=False,
                                    priority=const.PRIORITY_0, uid="123", payload={})
         sub.name = "abc"
+        mock_dir.return_value = "/mock-work-dir/123"
         task = session.create_task(sub)
         self.assertEqual(task.master_url, self.master_url)
         self.assertEqual(task.web_url, self.web_url)
         self.assertEqual(task.name, "abc")
+        self.assertEqual(task.working_directory, "/mock-work-dir/123")
         mock_mkdir.assert_called_once_with("./work/123", 0775)
+        mock_dir.assert_called_once_with("./work/123")
 
 # Load test suites
 def suites():
