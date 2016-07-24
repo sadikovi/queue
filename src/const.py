@@ -51,6 +51,14 @@ SUBMISSION_DISCARD = Status("DISCARD", "Discard")
 # Submission status is unknown, most likely failed,
 # reason is usually unsuccessfull shut down
 SUBMISSION_UNKNOWN = Status("UNKNOWN", "Unknown")
+# List of submission statuses
+SUBMISSION_STATUSES = [
+    SUBMISSION_PENDING, SUBMISSION_WAITING, SUBMISSION_RUNNING, SUBMISSION_SUCCESS,
+    SUBMISSION_FAILURE, SUBMISSION_DISCARD, SUBMISSION_UNKNOWN]
+
+# == Submission delay in seconds ==
+SUBMISSION_DELAY_MIN = 0
+SUBMISSION_DELAY_MAX = 604800 # 7 days * 24 hours * 3600 seconds
 
 # == Priority ==
 # Different priorities for submission, smaller number indicates higher priority, when there are

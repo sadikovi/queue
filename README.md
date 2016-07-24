@@ -15,7 +15,7 @@ might already be included with Python, otherwise refer to the documentation on h
 Install `nodejs` and `npm` (for Ubuntu 14.04):
 ```shell
 $ sudo apt-get update
-$ sudo apt-get install nodejs npm
+$ sudo apt-get install nodejs npm nodejs-legacy
 ```
 
 ## Build

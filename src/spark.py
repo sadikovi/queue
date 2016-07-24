@@ -9,6 +9,7 @@ import urllib2
 import src.const as const
 import src.context as context
 import src.scheduler as scheduler
+import src.submission as submission
 import src.util as util
 
 # Class to hold all Spark standalone cluster related functionality, including methods to validate
@@ -415,9 +416,12 @@ class SparkSession(context.Session):
     """
     Session context to manage launching tasks in Spark, and providing statistics.
     """
-    def __init__(self, master_url, web_url, num_executors=1, timeout=1.0, logger=None):
+    def __init__(self, master_url, web_url, working_dir, num_executors=1, timeout=1.0, logger=None):
         self.master_url = validate_master_url(master_url)
         self.web_url = validate_web_url(web_url)
+        # working directory is not validated
+        self.working_dir = working_dir
+        self.log_func = logger
         self.num_executors = scheduler.validate_num_executors(num_executors)
         self.timeout = scheduler.validate_timeout(timeout)
         self._scheduler = SparkStandaloneScheduler(self.master_url, self.web_url,
@@ -436,14 +440,33 @@ class SparkSession(context.Session):
         running = [app for app in apps if not app["completed"]]
         return const.SYSTEM_BUSY if running else const.SYSTEM_AVAILABLE
 
+    def create_task(self, sub):
+        if not isinstance(sub, submission.Submission):
+            raise AttributeError("Expected Submission instance, got %s" % sub)
+        if sub.is_template:
+            raise ValueError("Cannot create task from template %s" % sub.dumps())
+        if sub.is_deleted:
+            raise ValueError("Cannot create task from deleted submission %s" % sub.dumps())
+        # After this point submission can be converted into task
+        task = SparkStandaloneTask(sub.uid, sub.priority, self.log_func)
+        task.master_url = self.master_url
+        task.web_url = self.web_url
+        # create working directory for the task
+        task_working_dir = util.concat(self.working_dir, task.uid)
+        util.mkdir(task_working_dir, 0775)
+        task.working_directory = task_working_dir
+        # update payload to include name
+        task.set_application(name=sub.name, **sub.payload)
+        return task
+
     @property
     def scheduler(self):
         return self._scheduler
 
     @classmethod
-    def create(cls, conf, logger):
+    def create(cls, conf, working_dir, logger):
         timeout = conf.getConfFloat(const.OPT_SCHEDULER_TIMEOUT)
         num_parallel_tasks = conf.getConfInt(const.OPT_NUM_PARALLEL_TASKS)
         spark_master = conf.getConfString(const.OPT_SPARK_MASTER)
         spark_web = conf.getConfString(const.OPT_SPARK_WEB)
-        return cls(spark_master, spark_web, num_parallel_tasks, timeout, logger)
+        return cls(spark_master, spark_web, working_dir, num_parallel_tasks, timeout, logger)

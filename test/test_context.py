@@ -26,7 +26,11 @@ class SessionSuite(unittest.TestCase):
 
     def test_create(self):
         with self.assertRaises(NotImplementedError):
-            context.Session.create({"a": 1}, None)
+            context.Session.create({"a": 1}, "work-dir", None)
+
+    def test_create_task(self):
+        with self.assertRaises(NotImplementedError):
+            self.session.create_task(None)
 
 # Load test suites
 def suites():

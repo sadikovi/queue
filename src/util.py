@@ -91,6 +91,8 @@ def open(path, mode):
     """
     Shortcut for `open` Python built-in. Read docs on `open` for more information.
 
+    :param path: file path
+    :param mode: mode to use when opening file
     :return: File object based on path and mode
     """
     # pylint: disable=W0622,redefined-builtin
@@ -163,13 +165,15 @@ def get_default_logger(name):
     return logger
 
 # == Datetime related methods and classes ==
-def utcnow():
+def utcnow(delay=0):
     """
-    Simple wrapper on datetime.utcnow(), returns datetime object as UTC.
+    Simple wrapper on datetime.utcnow(), returns datetime object as UTC. Applies offset in seconds.
 
+    :param delay: offset in seconds
     :return: datetime object in UTC
     """
-    return datetime.datetime.utcnow() # pragma: no cover
+    delta = datetime.timedelta(seconds=delay)
+    return datetime.datetime.utcnow() + delta
 
 # == Configuration related methods and classes ==
 class QueueConf(object):

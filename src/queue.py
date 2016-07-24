@@ -49,7 +49,7 @@ class QueueController(object):
         if not isinstance(conf, util.QueueConf):
             raise AttributeError("Invalid configuration, got %s" % conf)
         # currently we only have one session for Spark, default logger is used for now
-        return spark.SparkSession.create(conf, None)
+        return spark.SparkSession.create(conf, self.working_dir, None)
 
     def _pretty_name(self, obj):
         """
