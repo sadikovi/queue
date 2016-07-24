@@ -29,6 +29,16 @@ class Session(object):
         """
         raise NotImplementedError("Not implemented")
 
+    def create_task(self, submission):
+        """
+        Create task from provided submission. If submission is invalid or cannot be converted into
+        task, method should raise an error.
+
+        :param: Submission instance
+        :return: Task instance for this submission
+        """
+        raise NotImplementedError("Not implemented")
+
     @property
     def scheduler(self):
         """
@@ -39,13 +49,14 @@ class Session(object):
         raise NotImplementedError("Not implemented")
 
     @classmethod
-    def create(cls, conf, logger):
+    def create(cls, conf, working_dir, logger):
         """
         Create instance of session using dictionary of configuration options. All options are in
         format "group.name", where "group" is option group, e.g. spark, and "name" is a name of
         the option, e.g. spark.master.
 
         :param conf: QueueConf instance
+        :param working_dir: verified working directory
         :param logger: logger function
         :return: instance of session
         """

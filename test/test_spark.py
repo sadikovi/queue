@@ -5,6 +5,7 @@ import mock
 import src.const as const
 import src.scheduler as scheduler
 import src.spark as spark
+import src.submission as submission
 
 # pylint: disable=W0212,protected-access
 class SparkStandaloneTaskSuite(unittest.TestCase):
@@ -413,44 +414,48 @@ class SparkSessionSuite(unittest.TestCase):
     def setUp(self):
         self.master_url = "spark://master:7077"
         self.web_url = "http://localhost:8080"
+        self.working_dir = "./work"
 
     def test_init(self):
         with self.assertRaises(StandardError):
-            spark.SparkSession("abc", self.web_url)
+            spark.SparkSession("abc", self.web_url, self.working_dir)
         with self.assertRaises(StandardError):
-            spark.SparkSession(self.master_url, "abc")
+            spark.SparkSession(self.master_url, "abc", self.working_dir)
         with self.assertRaises(ValueError):
-            spark.SparkSession(self.master_url, self.web_url, num_executors="abc")
+            spark.SparkSession(self.master_url, self.web_url, self.working_dir, num_executors="abc")
         with self.assertRaises(ValueError):
-            spark.SparkSession(self.master_url, self.web_url, num_executors=1, timeout="abc")
+            spark.SparkSession(self.master_url, self.web_url, self.working_dir, num_executors=1,
+                               timeout="abc")
         with self.assertRaises(AttributeError):
-            spark.SparkSession(self.master_url, self.web_url, num_executors=0)
+            spark.SparkSession(self.master_url, self.web_url, self.working_dir, num_executors=0)
         with self.assertRaises(AttributeError):
-            spark.SparkSession(self.master_url, self.web_url, num_executors=1, timeout=0.0)
+            spark.SparkSession(self.master_url, self.web_url, self.working_dir, num_executors=1,
+                               timeout=0.0)
         # valid instance
-        session = spark.SparkSession(self.master_url, self.web_url)
+        session = spark.SparkSession(self.master_url, self.web_url, self.working_dir)
         self.assertEqual(session.master_url, self.master_url)
         self.assertEqual(session.web_url, self.web_url)
+        self.assertEqual(session.working_dir, self.working_dir)
         self.assertEqual(session.num_executors, 1)
         self.assertEqual(session.timeout, 1.0)
         self.assertNotEqual(session.scheduler, None)
 
     def test_system_code(self):
-        session = spark.SparkSession(self.master_url, self.web_url)
+        session = spark.SparkSession(self.master_url, self.web_url, self.working_dir)
         self.assertEqual(session.system_code(), spark.SPARK_SYSTEM_CODE)
 
     def test_system_uri(self):
-        session = spark.SparkSession(self.master_url, self.web_url)
+        session = spark.SparkSession(self.master_url, self.web_url, self.working_dir)
         self.assertEqual(session.system_uri().url, self.web_url)
         self.assertEqual(session.system_uri().alias, "Spark Web UI")
 
     def test_scheduler(self):
-        session = spark.SparkSession(self.master_url, self.web_url)
+        session = spark.SparkSession(self.master_url, self.web_url, self.working_dir)
         self.assertTrue(isinstance(session.scheduler, scheduler.Scheduler))
 
     @mock.patch("src.spark.applications")
     def test_status(self, mock_applications):
-        session = spark.SparkSession(self.master_url, self.web_url)
+        session = spark.SparkSession(self.master_url, self.web_url, self.working_dir)
         mock_applications.return_value = None
         self.assertEqual(session.status(), const.SYSTEM_UNAVAILABLE)
         mock_applications.return_value = []
@@ -465,11 +470,34 @@ class SparkSessionSuite(unittest.TestCase):
         conf.getConfString.side_effect = [self.master_url, self.web_url]
         conf.getConfInt.return_value = 1
         conf.getConfFloat.return_value = 1.0
-        session = spark.SparkSession.create(conf, mock.Mock())
+        session = spark.SparkSession.create(conf, self.working_dir, mock.Mock())
         self.assertEqual(session.master_url, self.master_url)
         self.assertEqual(session.web_url, self.web_url)
+        self.assertEqual(session.working_dir, self.working_dir)
         self.assertEqual(session.num_executors, 1)
         self.assertEqual(session.timeout, 1.0)
+
+    @mock.patch("src.spark.util.mkdir")
+    def test_create_task(self, mock_mkdir):
+        session = spark.SparkSession(self.master_url, self.web_url, self.working_dir)
+        with self.assertRaises(AttributeError):
+            session.create_task(None)
+        with self.assertRaises(AttributeError):
+            session.create_task("abc")
+        template = mock.create_autospec(submission.Submission, is_template=True)
+        with self.assertRaises(ValueError):
+            session.create_task(template)
+        del_sub = mock.create_autospec(submission.Submission, is_template=False, is_deleted=True)
+        with self.assertRaises(ValueError):
+            session.create_task(del_sub)
+        sub = mock.create_autospec(submission.Submission, is_deleted=False, is_template=False,
+                                   priority=const.PRIORITY_0, uid="123", payload={})
+        sub.name = "abc"
+        task = session.create_task(sub)
+        self.assertEqual(task.master_url, self.master_url)
+        self.assertEqual(task.web_url, self.web_url)
+        self.assertEqual(task.name, "abc")
+        mock_mkdir.assert_called_once_with("./work/123", 0775)
 
 # Load test suites
 def suites():
