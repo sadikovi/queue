@@ -11,7 +11,8 @@ RUN_TESTS = {
     "test.test_util": True,
     "test.test_context": True,
     "test.test_scheduler": True,
-    "test.test_spark": True
+    "test.test_spark": True,
+    "test.test_submission": True
 }
 
 suites = unittest.TestSuite()

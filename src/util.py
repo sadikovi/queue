@@ -91,6 +91,8 @@ def open(path, mode):
     """
     Shortcut for `open` Python built-in. Read docs on `open` for more information.
 
+    :param path: file path
+    :param mode: mode to use when opening file
     :return: File object based on path and mode
     """
     # pylint: disable=W0622,redefined-builtin
