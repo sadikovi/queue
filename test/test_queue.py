@@ -5,6 +5,7 @@ import cherrypy
 import mock
 import src.const as const
 import src.queue as queue
+import src.simple as simple
 import src.spark as spark
 import src.util as util
 from test.cptestcase import BaseCherryPyTestCase
@@ -63,25 +64,37 @@ class QueueControllerSuite(unittest.TestCase):
     def setUp(self):
         test_scheduler.reset_mock()
         test_session.reset_mock()
+        self.args = {const.OPT_SYSTEM_CODE: spark.SPARK_SYSTEM_CODE}
 
     @mock.patch("src.queue.util.readwriteDirectory")
     @mock.patch("src.queue.util.readonlyDirectory")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
     def test_create_session(self, mock_session, mock_r, mock_rw):
-        controller = queue.QueueController(args={}, logger=mock.Mock())
+        controller = queue.QueueController(args=self.args, logger=mock.Mock())
         with self.assertRaises(AttributeError):
             controller._create_session(None)
         with self.assertRaises(AttributeError):
             controller._create_session({"a": 1})
         conf = util.QueueConf()
+        with self.assertRaises(StandardError):
+            controller._create_session(conf)
+        # check spark session
+        conf.setAllConf(self.args)
         session = controller._create_session(conf)
-        self.assertNotEqual(session, None)
+        self.assertTrue(isinstance(session, spark.SparkSession))
+        # check simple session
+        conf = util.QueueConf()
+        conf.setConf(const.OPT_SYSTEM_CODE, simple.SIMPLE_SYSTEM_CODE)
+        conf.setConf(const.OPT_SCHEDULER_TIMEOUT, 1.0)
+        conf.setConf(const.OPT_NUM_PARALLEL_TASKS, 1)
+        session = controller._create_session(conf)
+        self.assertTrue(isinstance(session, simple.SimpleSession))
 
     @mock.patch("src.queue.util.readwriteDirectory")
     @mock.patch("src.queue.util.readonlyDirectory")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
     def test_pretty_name(self, mock_session, mock_r, mock_rw):
-        controller = queue.QueueController(args={}, logger=mock.Mock())
+        controller = queue.QueueController(args=self.args, logger=mock.Mock())
         self.assertEqual(controller._pretty_name(controller), "QueueController")
         self.assertEqual(controller._pretty_name(queue.QueueController), "QueueController")
 
@@ -89,7 +102,7 @@ class QueueControllerSuite(unittest.TestCase):
     @mock.patch("src.queue.util.readonlyDirectory")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
     def test_get_status_dict(self, mock_session, mock_r, mock_rw):
-        controller = queue.QueueController(args={}, logger=mock.Mock())
+        controller = queue.QueueController(args=self.args, logger=mock.Mock())
         metrics = controller.get_status_dict()
         self.assertEqual(metrics["code"], "TEST")
         self.assertEqual(metrics["url"], {"href": "http://local:8080", "alias": "link"})
@@ -104,7 +117,7 @@ class QueueControllerSuite(unittest.TestCase):
     @mock.patch("src.queue.util.readonlyDirectory")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
     def test_start(self, mock_session, mock_r, mock_rw):
-        controller = queue.QueueController(args={}, logger=mock.Mock())
+        controller = queue.QueueController(args=self.args, logger=mock.Mock())
         controller.start()
         test_scheduler.start_maintenance.assert_called_once_with()
         test_scheduler.start.assert_called_once_with()
@@ -113,7 +126,7 @@ class QueueControllerSuite(unittest.TestCase):
     @mock.patch("src.queue.util.readonlyDirectory")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
     def test_stop(self, mock_session, mock_r, mock_rw):
-        controller = queue.QueueController(args={}, logger=mock.Mock())
+        controller = queue.QueueController(args=self.args, logger=mock.Mock())
         controller.stop()
         test_scheduler.stop.assert_called_once_with()
 # pylint: enable=W0212,protected-access,W0613,unused-argument

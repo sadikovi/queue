@@ -74,6 +74,7 @@ class ConstSuite(unittest.TestCase):
         self.assertEqual(const.OPT_SCHEDULER_TIMEOUT, "queue.scheduler.timeout")
         self.assertEqual(const.OPT_WORKING_DIR, "queue.working.directory")
         self.assertEqual(const.OPT_SERVICE_DIR, "queue.service.directory")
+        self.assertEqual(const.OPT_SYSTEM_CODE, "queue.system.code")
         self.assertEqual(const.OPT_SPARK_MASTER, "spark.master")
         self.assertEqual(const.OPT_SPARK_WEB, "spark.web")
 

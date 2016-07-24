@@ -12,6 +12,7 @@ RUN_TESTS = {
     "test.test_context": True,
     "test.test_scheduler": True,
     "test.test_spark": True,
+    "test.test_simple": True,
     "test.test_submission": True
 }
 

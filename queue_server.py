@@ -38,7 +38,7 @@ def create_cli_parser():
     parser.add_argument("--host", required=True, help="host to bind application to")
     parser.add_argument("--port", required=True, type=int, help="port to bind application to")
     # add group for generic queue options
-    generic_group = parser.add_argument_group("generic", "generic arguments for all groups")
+    generic_group = parser.add_argument_group("GENERIC", "generic arguments for all groups")
     generic_group.add_argument(
         "--%s" % qconst.OPT_NUM_PARALLEL_TASKS, default=1, type=int, metavar="NUM",
         help="number of tasks to launch in parallel (default: 1)")
@@ -51,8 +51,11 @@ def create_cli_parser():
     generic_group.add_argument(
         "--%s" % qconst.OPT_SERVICE_DIR, default="", metavar="SERVICE",
         help="service directory to traverse (jars, text files), must have read access")
+    generic_group.add_argument(
+        "--%s" % qconst.OPT_SYSTEM_CODE, default="", metavar="CODE",
+        help="under system code to use, e.g. SPARK")
     # add group for Spark options
-    spark_group = parser.add_argument_group("spark", "arguments to create Spark session/scheduler")
+    spark_group = parser.add_argument_group("SPARK", "arguments to create Spark session/scheduler")
     spark_group.add_argument(
         "--%s" % qconst.OPT_SPARK_MASTER, default="", help="Spark master address (default: '')")
     spark_group.add_argument(

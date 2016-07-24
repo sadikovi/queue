@@ -6,6 +6,7 @@ import cherrypy
 from jinja2 import Environment, FileSystemLoader
 from init import STATIC_PATH
 import src.const as const
+import src.simple as simple
 import src.spark as spark
 import src.util as util
 
@@ -48,8 +49,15 @@ class QueueController(object):
         """
         if not isinstance(conf, util.QueueConf):
             raise AttributeError("Invalid configuration, got %s" % conf)
-        # currently we only have one session for Spark, default logger is used for now
-        return spark.SparkSession.create(conf, self.working_dir, None)
+        system_code = conf.getConf(const.OPT_SYSTEM_CODE)
+        session_class = None
+        if system_code == spark.SPARK_SYSTEM_CODE:
+            session_class = spark.SparkSession
+        elif system_code == simple.SIMPLE_SYSTEM_CODE:
+            session_class = simple.SimpleSession
+        else:
+            raise StandardError("System code %s is unrecognized" % system_code)
+        return session_class.create(conf, self.working_dir, None)
 
     def _pretty_name(self, obj):
         """
