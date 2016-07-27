@@ -2,6 +2,7 @@
 
 import inspect
 import os
+import types
 import cherrypy
 from jinja2 import Environment, FileSystemLoader
 from init import STATIC_PATH
@@ -15,11 +16,77 @@ env = Environment(loader=FileSystemLoader(os.path.join(STATIC_PATH, "view")))
 TEMPLATE_HOME = "home.html"
 TEMPLATE_STATUS = "status.html"
 
-"""
-Queue server main entry point. It defines all URLs that are used either for static content or
-REST API. Note that entire configuration for server is set in here.
-"""
+def rest_json_response(func):
+    """
+    Decorator to process function and return error as JSON payload.
+    """
+    # pylint: disable=W0703,broad-except
+    def wrapper(*args, **kw):
+        try:
+            return func(*args, **kw)
+        except StandardError as std:
+            cherrypy.response.status = 400
+            return {"code": 400, "status": "ERROR", "msg": "%s" % std}
+        except Exception as exc:
+            cherrypy.response.status = 500
+            return {"code": 500, "status": "ERROR", "msg": "%s" % exc}
+    # pylint: enable=W0703,broad-except
+    return wrapper
+
+# pylint: disable=C0103,invalid-name
+class SubmissionDispatcher(object):
+    """
+    Request dispatcher for submission, allows to store and retrieve submission by id.
+    """
+    exposed = True
+
+    def __init__(self):
+        self.id = 123
+
+    @cherrypy.tools.json_out()
+    @rest_json_response
+    def GET(self):
+        # raise ValueError("Invalid parameters")
+        return {"method": cherrypy.request.method, "id": self.id}
+
+    @cherrypy.tools.json_in()
+    @cherrypy.tools.json_out()
+    @rest_json_response
+    def PUT(self):
+        # Currently we expected these fields to be present in JSON with certain type
+        # - name [string]
+        # - code [string]
+        # - priority [int]
+        # - delay [int], default is 0
+        # - payload [dict] default is {}
+        data = cherrypy.request.json
+        if not isinstance(data, types.DictType):
+            msg = "Expected dictionary with structure: {'name': 'NAME', 'code': 'CODE', " + \
+                "[optional]'priority': '2', [optional]'delay': '0', [optional]'payload': {...}}"
+            raise TypeError("%s, got %s" % (msg, data))
+        if "name" not in data:
+            raise KeyError("Expected required field 'name' from %s" % data)
+        name = data["name"]
+        if "code" not in data:
+            raise KeyError("Expected required field 'code' from %s" % data)
+        system_code = data["code"]
+        priority = int(data["priority"]) if "priority" in data else const.PRIORITY_2
+        delay = int(data["delay"]) if "delay" in data else 0
+        payload = dict(data["payload"]) if "payload" in data else {}
+        username = None
+        return {"name": name, "code": system_code, "priority": priority, "delay": delay,
+                "payload": payload, "username": username}
+# pylint: enable=C0103,invalid-name
+
+class RestApiDispatcher(object):
+    def __init__(self):
+        self.submission = SubmissionDispatcher()
+
 class QueueController(object):
+    """
+    Queue server main entry point. It defines all URLs that are used either for static content or
+    REST API. Note that entire configuration for server is set in here.
+    """
     def __init__(self, args, logger=None):
         """
         Create instance of application controller.
@@ -39,6 +106,7 @@ class QueueController(object):
         self.working_dir = util.readwriteDirectory(conf.getConfString(const.OPT_WORKING_DIR))
         self.service_dir = util.readonlyDirectory(conf.getConfString(const.OPT_SERVICE_DIR))
         self.session = self._create_session(conf)
+        self.api = RestApiDispatcher()
 
     def _create_session(self, conf):
         """
@@ -126,6 +194,11 @@ def getConf(): # pragma: no cover
         "/static": {
             "tools.staticdir.on": True,
             "tools.staticdir.dir": STATIC_PATH
+        },
+        "/api/submission": {
+            "request.dispatch": cherrypy.dispatch.MethodDispatcher(),
+            "tools.response_headers.on": True,
+            "tools.response_headers.headers": [("Content-Type", "application/json")]
         }
     }
     return conf
@@ -143,6 +216,6 @@ def start(host="127.0.0.1", port=8080, args=None): # pragma: no cover
     cherrypy.config.update({"server.socket_host": host})
     cherrypy.config.update({"server.socket_port": port})
     controller = QueueController(args)
-    cherrypy.engine.subscribe("start", controller.start)
-    cherrypy.engine.subscribe("stop", controller.stop)
+    # cherrypy.engine.subscribe("start", controller.start)
+    # cherrypy.engine.subscribe("stop", controller.stop)
     cherrypy.quickstart(controller, "/", getConf())
