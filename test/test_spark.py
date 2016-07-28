@@ -511,6 +511,8 @@ class SparkSessionSuite(unittest.TestCase):
         sub = mock.create_autospec(submission.Submission, is_template=True, system_code="ABC")
         with self.assertRaises(ValueError):
             session.create_task(sub)
+        self.assertEqual(mock_mkdir.call_count, 0)
+        self.assertEqual(mock_dir.call_count, 0)
 
 # Load test suites
 def suites():
