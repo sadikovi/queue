@@ -123,10 +123,14 @@ def validate_master_url(value):
     :param value: unresolved master address value
     :return: valid Spark master address as string
     """
-    uri = util.URI(value)
-    if uri.scheme != "spark":
-        raise ValueError("Expected scheme to be 'spark' for master url: %s" % value)
-    return uri.url
+    try:
+        uri = util.URI(value)
+    except StandardError as err:
+        raise StandardError("Failed to assign Spark master url for '%s', reason: %s" % (value, err))
+    else:
+        if uri.scheme != "spark":
+            raise ValueError("Expected scheme to be 'spark' for master url '%s'" % value)
+        return uri.url
 
 def validate_web_url(value):
     """
@@ -136,7 +140,10 @@ def validate_web_url(value):
     :param value: unresolved web url value
     :return: valid Spark web url as string
     """
-    return util.URI(value).url
+    try:
+        return util.URI(value).url
+    except StandardError as err:
+        raise StandardError("Failed to assign Spark web url for '%s', reason: %s" % (value, err))
 
 class SparkStandaloneTask(scheduler.Task):
     """
@@ -447,6 +454,8 @@ class SparkSession(context.Session):
             raise ValueError("Cannot create task from template %s" % sub.dumps())
         if sub.is_deleted:
             raise ValueError("Cannot create task from deleted submission %s" % sub.dumps())
+        if sub.system_code != SPARK_SYSTEM_CODE:
+            raise ValueError("Incompatible code, %s != %s" % (sub.system_code, SPARK_SYSTEM_CODE))
         # After this point submission can be converted into task
         task = SparkStandaloneTask(sub.uid, sub.priority, self.log_func)
         task.master_url = self.master_url

@@ -196,7 +196,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         self.assertEqual(task.master_url, spark.SPARK_MASTER_URL)
         with self.assertRaises(ValueError):
             task.master_url = spark.SPARK_WEB_URL
-        with self.assertRaises(AttributeError):
+        with self.assertRaises(StandardError):
             task.master_url = None
         with self.assertRaises(StandardError):
             task.master_url = "abc"
@@ -207,7 +207,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         task = spark.SparkStandaloneTask("123", const.PRIORITY_0, logger=self.logger)
         task.web_url = spark.SPARK_WEB_URL
         self.assertEqual(task.web_url, spark.SPARK_WEB_URL)
-        with self.assertRaises(AttributeError):
+        with self.assertRaises(StandardError):
             task.web_url = None
         with self.assertRaises(StandardError):
             task.web_url = "abc"
@@ -492,7 +492,8 @@ class SparkSessionSuite(unittest.TestCase):
         with self.assertRaises(ValueError):
             session.create_task(del_sub)
         sub = mock.create_autospec(submission.Submission, is_deleted=False, is_template=False,
-                                   priority=const.PRIORITY_0, uid="123", payload={})
+                                   priority=const.PRIORITY_0, uid="123", payload={},
+                                   system_code=spark.SPARK_SYSTEM_CODE)
         sub.name = "abc"
         mock_dir.return_value = "/mock-work-dir/123"
         task = session.create_task(sub)
@@ -502,6 +503,14 @@ class SparkSessionSuite(unittest.TestCase):
         self.assertEqual(task.working_directory, "/mock-work-dir/123")
         mock_mkdir.assert_called_once_with("./work/123", 0775)
         mock_dir.assert_called_once_with("./work/123")
+
+    @mock.patch("src.spark.util.readwriteDirectory")
+    @mock.patch("src.spark.util.mkdir")
+    def test_create_task_fail_sys_code(self, mock_mkdir, mock_dir):
+        session = spark.SparkSession(self.master_url, self.web_url, self.working_dir)
+        sub = mock.create_autospec(submission.Submission, is_template=True, system_code="ABC")
+        with self.assertRaises(ValueError):
+            session.create_task(sub)
 
 # Load test suites
 def suites():

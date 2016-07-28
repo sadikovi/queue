@@ -25,9 +25,9 @@ def validate_name(value):
     :param value: raw name value
     :return: correct name
     """
-    if not isinstance(value, types.StringType):
+    if not isinstance(value, types.StringType) and not isinstance(value, types.UnicodeType):
         raise TypeError("Expected value %s to be string" % value)
-    name = value.strip()
+    name = str(value).strip()
     if not name:
         raise ValueError("Name is not specified or contains spaces only")
     return name

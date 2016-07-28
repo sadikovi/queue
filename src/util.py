@@ -108,7 +108,7 @@ class URI(object):
         uri = urlparse.urlsplit(rawURI)
         # we expect scheme, hostname and port to be set, otherwise uri is considered invalid
         if not uri.port or not uri.hostname or not uri.scheme:
-            raise StandardError("Invalid URI - expected host, port and scheme from %s" % rawURI)
+            raise StandardError("Invalid URI - expected host, port and scheme from '%s'" % rawURI)
         self._host = uri.hostname
         self._port = int(uri.port)
         self._scheme = uri.scheme
@@ -145,6 +145,40 @@ class URI(object):
     @property
     def alias(self):
         return self._alias if self._alias else self._url
+
+def _safe_conversion(value, func, fail, msg):
+    """
+    Safe conversion using 'func' as conversion function. If conversion fails, 'None' is returned.
+    If 'fail' is set to True, then instead of returning 'None', raises error with extended message.
+
+    :param value: value to convert
+    :param func: conversion function
+    :param fail: raise error in case of failed conversion if True, otherwise return None
+    :param msg: custom message in case of failure
+    :return: converted value or None if no fail
+    """
+    result = None
+    try:
+        result = func(value)
+    except TypeError as type_error:
+        if fail:
+            raise TypeError(msg % (value, type_error))
+    except ValueError as value_error:
+        if fail:
+            raise ValueError(msg % (value, value_error))
+    return result
+
+def safe_int(value, fail=False):
+    """
+    Safe conversion to int.
+    """
+    return _safe_conversion(value, int, fail, "Failed to convert '%s' into 'int', reason: %s")
+
+def safe_dict(value, fail=False):
+    """
+    Safe conversion to dict.
+    """
+    return _safe_conversion(value, dict, fail, "Failed to convert '%s' into 'dict', reason: %s")
 
 # == Logging related methods and classes ==
 def get_default_logger(name):

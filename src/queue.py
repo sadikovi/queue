@@ -9,6 +9,7 @@ from init import STATIC_PATH
 import src.const as const
 import src.simple as simple
 import src.spark as spark
+import src.submission as submission
 import src.util as util
 
 # Loading jinja templates, we bind web directory to serve as collection of views
@@ -16,71 +17,86 @@ env = Environment(loader=FileSystemLoader(os.path.join(STATIC_PATH, "view")))
 TEMPLATE_HOME = "home.html"
 TEMPLATE_STATUS = "status.html"
 
-def rest_json_response(func):
+def rest_json_out(func):
     """
     Decorator to process function and return error as JSON payload.
+
+    :param func: function to wrap
+    :return: JSON result
     """
     # pylint: disable=W0703,broad-except
     def wrapper(*args, **kw):
         try:
-            return func(*args, **kw)
-        except StandardError as std:
+            data = func(*args, **kw)
+            cherrypy.response.status = 200
+            return {"code": 200, "status": "OK", "data": data}
+        except StandardError as validation_error:
             cherrypy.response.status = 400
-            return {"code": 400, "status": "ERROR", "msg": "%s" % std}
-        except Exception as exc:
+            return {"code": 400, "status": "ERROR", "msg": "%s" % validation_error}
+        except Exception as server_error:
             cherrypy.response.status = 500
-            return {"code": 500, "status": "ERROR", "msg": "%s" % exc}
+            return {"code": 500, "status": "ERROR", "msg": "%s" % server_error}
     # pylint: enable=W0703,broad-except
     return wrapper
 
 # pylint: disable=C0103,invalid-name
 class SubmissionDispatcher(object):
-    """
-    Request dispatcher for submission, allows to store and retrieve submission by id.
-    """
     exposed = True
 
-    def __init__(self):
-        self.id = 123
+    def __init__(self, session):
+        """
+        Create instance of submission dispatcher.
+
+        :param session: current under-system session
+        """
+        self.session = session
 
     @cherrypy.tools.json_out()
-    @rest_json_response
+    @rest_json_out
     def GET(self):
-        # raise ValueError("Invalid parameters")
         return {"method": cherrypy.request.method, "id": self.id}
 
     @cherrypy.tools.json_in()
     @cherrypy.tools.json_out()
-    @rest_json_response
+    @rest_json_out
     def PUT(self):
-        # Currently we expected these fields to be present in JSON with certain type
-        # - name [string]
-        # - code [string]
-        # - priority [int]
-        # - delay [int], default is 0
-        # - payload [dict] default is {}
+        """
+        Create submission out of request JSON. This forces certain fields to exist in JSON.
+        - name (string) - submission name
+        - code (string) - session code to handle
+        - priority (int) - priority for the submission, currently defaults to PRIORITY_2.
+        - delay (int) - delay in seconds, defaults to 0 seconds
+        - payload (dict) - payload to create task, defaults to '{...}'
+
+        Field validation is done in submission and task, this method only validates existence of
+        menitoned above fields. Current logic is that submission + task are created, stored in
+        database, scheduled if necessary, and result is returned.
+        """
         data = cherrypy.request.json
         if not isinstance(data, types.DictType):
-            msg = "Expected dictionary with structure: {'name': 'NAME', 'code': 'CODE', " + \
-                "[optional]'priority': '2', [optional]'delay': '0', [optional]'payload': {...}}"
-            raise TypeError("%s, got %s" % (msg, data))
+            raise TypeError("Expected request JSON as dictionary, got %s" % data)
+        # Validate keys
         if "name" not in data:
             raise KeyError("Expected required field 'name' from %s" % data)
-        name = data["name"]
         if "code" not in data:
             raise KeyError("Expected required field 'code' from %s" % data)
+        name = data["name"]
         system_code = data["code"]
-        priority = int(data["priority"]) if "priority" in data else const.PRIORITY_2
-        delay = int(data["delay"]) if "delay" in data else 0
-        payload = dict(data["payload"]) if "payload" in data else {}
+        pr = util.safe_int(data["priority"], fail=True) if "priority" in data else const.PRIORITY_2
+        delay = util.safe_int(data["delay"], fail=True) if "delay" in data else 0
+        payload = util.safe_dict(data["payload"], fail=True) if "payload" in data else {}
         username = None
-        return {"name": name, "code": system_code, "priority": priority, "delay": delay,
-                "payload": payload, "username": username}
+        # Create generic submission
+        sub = submission.Submission(
+            name, system_code, priority=pr, delay=delay, payload=payload, username=username)
+        # Create task from submission
+        task = self.session.create_task(sub)
+        return {"id": sub.uid, "task_uid": task.uid, "msg": "Submission + task created"}
 # pylint: enable=C0103,invalid-name
 
 class RestApiDispatcher(object):
-    def __init__(self):
-        self.submission = SubmissionDispatcher()
+    def __init__(self, session):
+        self.submission = SubmissionDispatcher(session)
 
 class QueueController(object):
     """
@@ -106,7 +122,7 @@ class QueueController(object):
         self.working_dir = util.readwriteDirectory(conf.getConfString(const.OPT_WORKING_DIR))
         self.service_dir = util.readonlyDirectory(conf.getConfString(const.OPT_SERVICE_DIR))
         self.session = self._create_session(conf)
-        self.api = RestApiDispatcher()
+        self.api = RestApiDispatcher(self.session)
 
     def _create_session(self, conf):
         """
