@@ -137,6 +137,24 @@ class UtilSuite(unittest.TestCase):
         util.mkdir("path", 0777)
         mock_os.mkdir.assert_called_with("path", 0777)
 
+    def test_safe_conversion(self):
+        # safe integer conversion
+        self.assertEqual(util.safe_int("abc", fail=False), None)
+        self.assertEqual(util.safe_int(None, fail=False), None)
+        self.assertEqual(util.safe_int("123", fail=False), 123)
+        self.assertEqual(util.safe_int(0, fail=False), 0)
+        with self.assertRaises(TypeError):
+            util.safe_int(None, fail=True)
+        with self.assertRaises(ValueError):
+            util.safe_int("abc", fail=True)
+        # safe dictionary conversion
+        self.assertEqual(util.safe_dict("abc", fail=False), None)
+        self.assertEqual(util.safe_dict([], fail=False), {}) # weird conversion rule for list
+        self.assertEqual(util.safe_dict({}, fail=False), {})
+        self.assertEqual(util.safe_dict({"key": "value"}, fail=False), {"key": "value"})
+        with self.assertRaises(TypeError):
+            util.safe_dict(None, fail=True)
+
 class URISuite(unittest.TestCase):
     def setUp(self):
         self.uri1 = util.URI("http://localhost:8080", "Spark UI")

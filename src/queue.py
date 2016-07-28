@@ -2,7 +2,6 @@
 
 import inspect
 import os
-import types
 import cherrypy
 from jinja2 import Environment, FileSystemLoader
 from init import STATIC_PATH
@@ -73,8 +72,6 @@ class SubmissionDispatcher(object):
         database, scheduled if necessary, and result is returned.
         """
         data = cherrypy.request.json
-        if not isinstance(data, types.DictType):
-            raise TypeError("Expected request JSON as dictionary, got %s" % data)
         # Validate keys
         if "name" not in data:
             raise KeyError("Expected required field 'name' from %s" % data)
