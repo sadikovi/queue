@@ -87,6 +87,15 @@ def mkdir(path, mode):
         raise ValueError("Invalid mode %s is provided" % mode)
     os.mkdir(path, mode)
 
+def exists(path):
+    """
+    Shortcut for `os.path.exists()` method.
+
+    :param path: path to check
+    :return: True if path exists, False otherwise
+    """
+    return os.path.exists(path)
+
 def open(path, mode):
     """
     Shortcut for `open` Python built-in. Read docs on `open` for more information.

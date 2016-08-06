@@ -6,7 +6,6 @@ import mock
 import src.util as util
 
 class UtilSuite(unittest.TestCase):
-
     @mock.patch("src.util.os")
     def test_resolve_path_fail_1(self, mock_os):
         mock_os.path.abspath.side_effect = OSError("Test")
@@ -136,6 +135,25 @@ class UtilSuite(unittest.TestCase):
         mock_os.mkdir.return_value = None
         util.mkdir("path", 0777)
         mock_os.mkdir.assert_called_with("path", 0777)
+
+    def test_safe_dict(self):
+        self.assertEqual(util.safe_dict(None), None)
+        self.assertEqual(util.safe_dict([1, 2]), None)
+        self.assertEqual(util.safe_dict({"a": True}), {"a": True})
+        # testing of the failed state
+        with self.assertRaises(TypeError):
+            util.safe_dict(None, fail=True)
+
+    def test_safe_int(self):
+        self.assertEqual(util.safe_int(None), None)
+        self.assertEqual(util.safe_int({"a": 1}), None)
+        self.assertEqual(util.safe_int("abc"), None)
+        self.assertEqual(util.safe_int(1), 1)
+        # testing of the failed state
+        with self.assertRaises(TypeError):
+            util.safe_int(None, fail=True)
+        with self.assertRaises(ValueError):
+            util.safe_int("abc", fail=True)
 
 class URISuite(unittest.TestCase):
     def setUp(self):
