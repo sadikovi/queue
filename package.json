@@ -19,13 +19,9 @@
     "lint": "coffeelint -f coffeelint.json web/coffee && coffeelint -f coffeelint.json web/spec",
     "test": "jasmine-node --coffee web/spec",
     "build": "npm run lint && npm run test && npm run compile",
-    "misc_copy_octicons": "for f in $(find node_modules/octicons/octicons -type f \\( -name '*.eot' -or -name '*.ttf' -or -name '*.svg' -or -name '*.woff' \\)); do cp $f static/; done",
     "misc_copy_favicon": "cp web/favicon.ico static",
     "misc_copy_view": "cp -r web/view static",
-    "publish": "npm run setup && npm run build && npm run misc_copy_octicons && npm run misc_copy_favicon && npm run misc_copy_view"
-  },
-  "dependencies": {
-    "octicons": "^3.5.0"
+    "publish": "npm run setup && npm run build && npm run misc_copy_favicon && npm run misc_copy_view"
   },
   "devDependencies": {
     "coffee-script": "^1.10.0",

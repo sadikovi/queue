@@ -1,3 +1,6 @@
+# Database
+pymongo == 3.3.0
+
 # CherryPy
 cherrypy == 6.0.2
 jinja2 == 2.8
