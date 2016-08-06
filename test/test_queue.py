@@ -27,7 +27,9 @@ import src.spark as spark
 import src.util as util
 from test.cptestcase import BaseCherryPyTestCase
 
-# == Test session + scheduler ==
+# == Test task + session + scheduler ==
+test_task = mock.create_autospec(spark.SparkStandaloneTask, spec_set=True, instance=True, uid="123")
+
 test_scheduler = mock.create_autospec(spark.SparkStandaloneScheduler, spec_set=True, instance=True)
 test_scheduler.get_num_executors.return_value = 5
 test_scheduler.executor_class.return_value = spark.SparkStandaloneExecutor
@@ -39,6 +41,7 @@ test_session.system_code.return_value = "TEST"
 test_session.system_uri.return_value = util.URI("http://local:8080", "link")
 test_session.status.return_value = const.SYSTEM_BUSY
 test_session.scheduler = test_scheduler
+test_session.create_task.return_value = test_task
 
 @mock.patch("src.queue.util")
 def setUpModule(mock_util):
@@ -76,12 +79,66 @@ class QueueSuite(BaseCherryPyTestCase):
         self.assertEqual(response.headers["Content-Type"], "text/html;charset=utf-8")
         self.assertTrue("<title>Status &middot; Queue</title>" in response.body[0])
 
+    def test_rest_submission_put_1(self):
+        response = self.request("/api/submission", method="PUT", data="{abc}",
+                                headers={"Content-Type": "application/json"})
+        self.assertEqual(response.output_status, "400 Bad Request")
+        self.assertEqual(response.headers["Content-Type"], "text/html;charset=utf-8")
+        self.assertTrue("<p>Invalid JSON document</p>" in response.body[0])
+
+    def test_rest_submission_put_2(self):
+        response = self.request(
+            "/api/submission",
+            method="PUT",
+            data="""{"key": "value"}""",
+            headers={"Content-Type": "application/json"})
+        self.assertEqual(response.output_status, "400 Bad Request")
+        self.assertEqual(response.headers["Content-Type"], "application/json")
+        self.assertTrue("Expected required field" in response.body[0])
+
+    def test_rest_submission_put_3(self):
+        response = self.request(
+            "/api/submission",
+            method="PUT",
+            data="""{"name": "test"}""",
+            headers={"Content-Type": "application/json"})
+        self.assertEqual(response.output_status, "400 Bad Request")
+        self.assertEqual(response.headers["Content-Type"], "application/json")
+        self.assertTrue("Expected required field 'code'" in response.body[0])
+
+    def test_rest_submission_put_4(self):
+        response = self.request(
+            "/api/submission",
+            method="PUT",
+            data="""{"name": "test", "code": "simple"}""",
+            headers={"Content-Type": "application/json"})
+        self.assertEqual(response.output_status, "200 OK")
+        self.assertEqual(response.headers["Content-Type"], "application/json")
+        self.assertTrue("\"task_uid\": \"123\"" in response.body[0])
+
 # pylint: disable=W0212,protected-access,W0613,unused-argument
 class QueueControllerSuite(unittest.TestCase):
     def setUp(self):
         test_scheduler.reset_mock()
         test_session.reset_mock()
         self.args = {const.OPT_SYSTEM_CODE: spark.SPARK_SYSTEM_CODE}
+
+    def test_rest_json_out(self):
+        def test1():
+            raise StandardError("test")
+        self.assertEqual(
+            queue.rest_json_out(test1).__call__(),
+            {"status": "ERROR", "msg": "test", "code": 400})
+        def test2():
+            raise Exception("test")
+        self.assertEqual(
+            queue.rest_json_out(test2).__call__(),
+            {"status": "ERROR", "msg": "test", "code": 500})
+        def test3():
+            return {"key": "value"}
+        self.assertEqual(
+            queue.rest_json_out(test3).__call__(),
+            {"status": "OK", "data": {"key": "value"}, "code": 200})
 
     @mock.patch("src.queue.util.readwriteDirectory")
     @mock.patch("src.queue.util.readonlyDirectory")

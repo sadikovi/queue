@@ -155,6 +155,7 @@ class UtilSuite(unittest.TestCase):
 
     def test_safe_dict(self):
         self.assertEqual(util.safe_dict(None), None)
+        self.assertEqual(util.safe_dict([]), {}) # weird conversion rule for list
         self.assertEqual(util.safe_dict([1, 2]), None)
         self.assertEqual(util.safe_dict({"a": True}), {"a": True})
         # testing of the failed state
@@ -166,6 +167,7 @@ class UtilSuite(unittest.TestCase):
         self.assertEqual(util.safe_int({"a": 1}), None)
         self.assertEqual(util.safe_int("abc"), None)
         self.assertEqual(util.safe_int(1), 1)
+        self.assertEqual(util.safe_int(0), 0)
         # testing of the failed state
         with self.assertRaises(TypeError):
             util.safe_int(None, fail=True)
