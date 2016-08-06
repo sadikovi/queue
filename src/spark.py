@@ -184,8 +184,7 @@ class SparkStandaloneTask(scheduler.Task):
         # Task refresh timeout
         self.timeout = 1.0
         # Task logger
-        logger_name = "%s[%s]" % (type(self).__name__, self.__uid)
-        self.logger = logger(logger_name) if logger else util.get_default_logger(logger_name)
+        self._logger = logger
         # == Spark cluster related options ==
         # Define how to connect and retrieve cluster information
         self._spark_submit = SPARK_SUBMIT
@@ -208,6 +207,11 @@ class SparkStandaloneTask(scheduler.Task):
     @property
     def priority(self):
         return self.__priority
+
+    @property
+    def logger(self):
+        logger_name = "%s[%s]" % (type(self).__name__, self.__uid)
+        return self._logger(logger_name) if self._logger else util.get_default_logger(logger_name)
 
     # == Get and set for Spark cluster related options ==
     @property

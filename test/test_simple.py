@@ -17,6 +17,7 @@
 # limitations under the License.
 #
 
+import cPickle
 import unittest
 import mock
 import src.const as const
@@ -56,6 +57,14 @@ class SimpleTaskSuite(unittest.TestCase):
         task.cancel()
         self.assertEqual(task._cancelled, True)
         self.assertEqual(task.is_cancelled(), True)
+
+    def test_serde(self):
+        task = simple.SimpleTask("123", 123, logger=None)
+        ser = cPickle.dumps(task)
+        new_task = cPickle.loads(ser)
+        self.assertEqual(new_task.uid, task.uid)
+        self.assertEqual(new_task.priority, task.priority)
+        self.assertEqual(new_task.dumps(), task.dumps())
 # pylint: enable=W0212,protected-access
 
 class SimpleSessionSuite(unittest.TestCase):

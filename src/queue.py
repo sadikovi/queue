@@ -17,6 +17,7 @@
 # limitations under the License.
 #
 
+import cPickle
 import inspect
 import os
 import shlex
@@ -26,6 +27,7 @@ from jinja2 import Environment, FileSystemLoader
 from init import STATIC_PATH
 import pymongo
 import src.const as const
+import src.scheduler as scheduler
 import src.simple as simple
 import src.spark as spark
 import src.submission as submission
@@ -148,6 +150,9 @@ env = Environment(loader=FileSystemLoader(os.path.join(STATIC_PATH, "view")))
 TEMPLATE_HOME = "home.html"
 TEMPLATE_STATUS = "status.html"
 
+# Events
+EVENT_CREATE = "event-create"
+
 def rest_json_out(func):
     """
     Decorator to process function and return error as JSON payload.
@@ -185,7 +190,7 @@ class SubmissionDispatcher(object):
     @cherrypy.tools.json_out()
     @rest_json_out
     def GET(self):
-        return {"method": cherrypy.request.method, "id": self.id}
+        return {"method": cherrypy.request.method, "id": "123"}
 
     @cherrypy.tools.json_in()
     @cherrypy.tools.json_out()
@@ -215,12 +220,11 @@ class SubmissionDispatcher(object):
         delay = util.safe_int(data["delay"], fail=True) if "delay" in data else 0
         payload = util.safe_dict(data["payload"], fail=True) if "payload" in data else {}
         username = None
-        # Create generic submission
         sub = submission.Submission(
             name, system_code, priority=pr, delay=delay, payload=payload, username=username)
-        # Create task from submission
         task = self.session.create_task(sub)
-        return {"id": sub.uid, "task_uid": task.uid, "msg": "Submission + task created"}
+        cherrypy.engine.publish(EVENT_CREATE, sub, task)
+        return {"uid": sub.uid, "msg": "Submission created"}
 # pylint: enable=C0103,invalid-name
 
 class RestApiDispatcher(object):
@@ -331,15 +335,26 @@ class QueueController(object):
         }
         return session_status
 
-    @cherrypy.expose
-    def index(self):
-        template = env.get_template(TEMPLATE_HOME)
-        return template.render()
+    def prepare_insert_submission(self, new_submission):
+        if not isinstance(new_submission, submission.Submission):
+            raise TypeError("Expected Submission type to save, got '%s'" % new_submission)
+        return new_submission.dumps()
 
-    @cherrypy.expose
-    def status(self):
-        template = env.get_template(TEMPLATE_STATUS)
-        return template.render(self.get_status_dict())
+    def prepare_insert_task(self, new_task):
+        if not isinstance(new_task, scheduler.Task):
+            raise StandardError("Expected Task type to save, got '%s'" % new_task)
+        return {
+            "uid": new_task.uid,
+            "serde": cPickle.dumps(new_task),
+            "payload": new_task.dumps()
+        }
+
+    def event_create(self, new_submission, new_task):
+        sub_dict = self.prepare_insert_submission(new_submission)
+        task_dict = self.prepare_insert_task(new_task)
+        db = self.client.queue
+        db.tasks.insert_one(task_dict)
+        db.submissions.insert_one(sub_dict)
 
     def start(self):
         """
@@ -360,6 +375,8 @@ class QueueController(object):
         db.tasks.create_index([
             ("uid", pymongo.ASCENDING)
         ])
+        # subscribe to events
+        cherrypy.engine.subscribe(EVENT_CREATE, self.event_create)
         # start scheduler
         self.session.scheduler.start_maintenance()
         self.session.scheduler.start()
@@ -370,6 +387,17 @@ class QueueController(object):
         """
         self.session.scheduler.stop()
         self.client.close()
+
+    # == HTML pages ==
+    @cherrypy.expose
+    def index(self):
+        template = env.get_template(TEMPLATE_HOME)
+        return template.render()
+
+    @cherrypy.expose
+    def status(self):
+        template = env.get_template(TEMPLATE_STATUS)
+        return template.render(self.get_status_dict())
 
 # Configuration setup for application except host and port
 def getConf(): # pragma: no cover

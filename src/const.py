@@ -54,20 +54,20 @@ SYSTEM_UNAVAILABLE = Status("UNAVAILABLE", "Unavailable")
 
 # == Submission status ==
 # Submission is pending, this is the initial status
-SUBMISSION_PENDING = Status("PENDING", "Pending")
+SUBMISSION_PENDING = "PENDING"
 # Submission is waiting because of scheduled delay
-SUBMISSION_WAITING = Status("WAITING", "Waiting")
+SUBMISSION_WAITING = "WAITING"
 # Submission is running on system backend
-SUBMISSION_RUNNING = Status("RUNNING", "Running")
+SUBMISSION_RUNNING = "RUNNING"
 # Submission is finished successfully
-SUBMISSION_SUCCESS = Status("SUCCESS", "Success")
+SUBMISSION_SUCCESS = "SUCCESS"
 # Submission is finished with error
-SUBMISSION_FAILURE = Status("FAILURE", "Failure")
+SUBMISSION_FAILURE = "FAILURE"
 # Submission is discarded, as it is no longer needed
-SUBMISSION_DISCARD = Status("DISCARD", "Discard")
+SUBMISSION_DISCARD = "DISCARD"
 # Submission status is unknown, most likely failed,
 # reason is usually unsuccessfull shut down
-SUBMISSION_UNKNOWN = Status("UNKNOWN", "Unknown")
+SUBMISSION_UNKNOWN = "UNKNOWN"
 # List of submission statuses
 SUBMISSION_STATUSES = [
     SUBMISSION_PENDING, SUBMISSION_WAITING, SUBMISSION_RUNNING, SUBMISSION_SUCCESS,

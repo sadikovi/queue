@@ -36,10 +36,14 @@ class SimpleTask(scheduler.Task):
         self._cancelled = False
         self._iterations = 10
         self.name = "SimpleTask"
-        self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
+        self._logger = logger(self.name) if logger else None
 
     def is_cancelled(self):
         return self._cancelled
+
+    @property
+    def logger(self):
+        return self._logger if self._logger else util.get_default_logger(self.name)
 
     @property
     def uid(self):

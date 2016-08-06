@@ -53,32 +53,25 @@ class ConstSuite(unittest.TestCase):
 
     # Tests for submission statuses
     def test_submission_pending(self):
-        self.assertEqual(const.SUBMISSION_PENDING.name, "PENDING")
-        self.assertEqual(const.SUBMISSION_PENDING.desc, "Pending")
+        self.assertEqual(const.SUBMISSION_PENDING, "PENDING")
 
     def test_submission_waiting(self):
-        self.assertEqual(const.SUBMISSION_WAITING.name, "WAITING")
-        self.assertEqual(const.SUBMISSION_WAITING.desc, "Waiting")
+        self.assertEqual(const.SUBMISSION_WAITING, "WAITING")
 
     def test_submission_running(self):
-        self.assertEqual(const.SUBMISSION_RUNNING.name, "RUNNING")
-        self.assertEqual(const.SUBMISSION_RUNNING.desc, "Running")
+        self.assertEqual(const.SUBMISSION_RUNNING, "RUNNING")
 
     def test_submission_success(self):
-        self.assertEqual(const.SUBMISSION_SUCCESS.name, "SUCCESS")
-        self.assertEqual(const.SUBMISSION_SUCCESS.desc, "Success")
+        self.assertEqual(const.SUBMISSION_SUCCESS, "SUCCESS")
 
     def test_submission_failure(self):
-        self.assertEqual(const.SUBMISSION_FAILURE.name, "FAILURE")
-        self.assertEqual(const.SUBMISSION_FAILURE.desc, "Failure")
+        self.assertEqual(const.SUBMISSION_FAILURE, "FAILURE")
 
     def test_submission_discard(self):
-        self.assertEqual(const.SUBMISSION_DISCARD.name, "DISCARD")
-        self.assertEqual(const.SUBMISSION_DISCARD.desc, "Discard")
+        self.assertEqual(const.SUBMISSION_DISCARD, "DISCARD")
 
     def test_submission_unknown(self):
-        self.assertEqual(const.SUBMISSION_UNKNOWN.name, "UNKNOWN")
-        self.assertEqual(const.SUBMISSION_UNKNOWN.desc, "Unknown")
+        self.assertEqual(const.SUBMISSION_UNKNOWN, "UNKNOWN")
 
     # Tests for priority levels
     def test_priority(self):

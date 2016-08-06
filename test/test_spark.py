@@ -17,6 +17,7 @@
 # limitations under the License.
 #
 
+import cPickle
 import unittest
 import mock
 import src.const as const
@@ -377,6 +378,18 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         self.assertEqual(exit_code, None)
         task._current_ps().terminate.assert_called_with()
         task._current_ps().kill.assert_called_with()
+
+    def test_serde(self):
+        task = spark.SparkStandaloneTask("123", const.PRIORITY_0, logger=None)
+        new_task = cPickle.loads(cPickle.dumps(task))
+        self.assertEqual(new_task.uid, task.uid)
+        self.assertEqual(new_task.priority, task.priority)
+        self.assertEqual(new_task.working_directory, task.working_directory)
+        self.assertEqual(new_task.name, task.name)
+        self.assertEqual(new_task.main_class, task.main_class)
+        self.assertEqual(new_task.jar, task.jar)
+        self.assertEqual(new_task.spark_options, task.spark_options)
+        self.assertEqual(new_task.job_options, task.job_options)
 # pylint: enable=W0212,protected-access
 
 class SparkStandaloneExecutorSuite(unittest.TestCase):

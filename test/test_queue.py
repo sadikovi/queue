@@ -17,6 +17,7 @@
 # limitations under the License.
 #
 
+import json
 import unittest
 import cherrypy
 import mock
@@ -42,6 +43,10 @@ test_session.system_uri.return_value = util.URI("http://local:8080", "link")
 test_session.status.return_value = const.SYSTEM_BUSY
 test_session.scheduler = test_scheduler
 test_session.create_task.return_value = test_task
+
+# mock publish + subscribe services
+cherrypy.engine.publish = mock.Mock()
+cherrypy.engine.subscribe = mock.Mock()
 
 @mock.patch("src.queue.util")
 @mock.patch("src.queue.pymongo")
@@ -116,7 +121,11 @@ class QueueSuite(BaseCherryPyTestCase):
             headers={"Content-Type": "application/json"})
         self.assertEqual(response.output_status, "200 OK")
         self.assertEqual(response.headers["Content-Type"], "application/json")
-        self.assertTrue("\"task_uid\": \"123\"" in response.body[0])
+        answer = json.loads(response.body[0])
+        self.assertEqual(answer["status"], "OK")
+        self.assertEqual(answer["code"], 200)
+        self.assertEqual(answer["data"]["msg"], "Submission created")
+        self.assertTrue("uid" in answer["data"])
 
 # pylint: disable=W0212,protected-access,W0613,unused-argument
 class QueueControllerSuite(unittest.TestCase):
