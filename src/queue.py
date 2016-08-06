@@ -345,9 +345,8 @@ class QueueController(object):
         """
         Start all session services.
         """
-        self.session.scheduler.start_maintenance()
-        self.session.scheduler.start()
         # getting server info validates connection
+        self.logger.info("Trying to connect to Mongo instance")
         server_info = self.client.server_info()
         self.logger.info(server_info)
         # database and tables' names are fixed for now
@@ -361,6 +360,9 @@ class QueueController(object):
         db.tasks.create_index([
             ("uid", pymongo.ASCENDING)
         ])
+        # start scheduler
+        self.session.scheduler.start_maintenance()
+        self.session.scheduler.start()
 
     def stop(self):
         """
@@ -400,6 +402,6 @@ def start(host="127.0.0.1", port=8080, args=None): # pragma: no cover
     cherrypy.config.update({"server.socket_host": host})
     cherrypy.config.update({"server.socket_port": port})
     controller = QueueController(args)
-    # cherrypy.engine.subscribe("start", controller.start)
-    # cherrypy.engine.subscribe("stop", controller.stop)
+    cherrypy.engine.subscribe("start", controller.start)
+    cherrypy.engine.subscribe("stop", controller.stop)
     cherrypy.quickstart(controller, "/", getConf())
