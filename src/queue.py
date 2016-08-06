@@ -24,6 +24,7 @@ import types
 import cherrypy
 from jinja2 import Environment, FileSystemLoader
 from init import STATIC_PATH
+import pymongo
 import src.const as const
 import src.simple as simple
 import src.spark as spark
@@ -251,7 +252,7 @@ class QueueController(object):
         self.working_dir = self._validate_working_dir(conf.getConfString(const.OPT_WORKING_DIR))
         self.service_dir = self._validate_service_dir(conf.getConfString(const.OPT_SERVICE_DIR))
         self.session = self._create_session(conf)
-        # self.client = MongoClient(self.mongodb_url)
+        self.client = pymongo.MongoClient(self.mongodb_url)
         self.api = RestApiDispatcher(self.session)
 
     def _create_session(self, conf):
@@ -346,12 +347,27 @@ class QueueController(object):
         """
         self.session.scheduler.start_maintenance()
         self.session.scheduler.start()
+        # getting server info validates connection
+        server_info = self.client.server_info()
+        self.logger.info(server_info)
+        # database and tables' names are fixed for now
+        self.logger.debug("Setting up database and indexes")
+        db = self.client.queue
+        db.submissions.create_index([
+            ("uid", pymongo.ASCENDING),
+            ("status", pymongo.ASCENDING),
+            ("createtime", pymongo.DESCENDING)
+        ])
+        db.tasks.create_index([
+            ("uid", pymongo.ASCENDING)
+        ])
 
     def stop(self):
         """
         Stop all session services.
         """
         self.session.scheduler.stop()
+        self.client.close()
 
 # Configuration setup for application except host and port
 def getConf(): # pragma: no cover

@@ -44,8 +44,10 @@ test_session.scheduler = test_scheduler
 test_session.create_task.return_value = test_task
 
 @mock.patch("src.queue.util")
-def setUpModule(mock_util):
+@mock.patch("src.queue.pymongo")
+def setUpModule(mock_pymongo, mock_util):
     # for testing web-service functionality only we mock session, util in controller
+    mock_pymongo.MongoClient = mock.Mock()
     mock_util.readwriteDirectory.return_value = "/None"
     mock_util.readonlyDirectory.return_value = "/None"
     with mock.patch.object(queue.QueueController, "_create_session", return_value=test_session):
@@ -141,8 +143,9 @@ class QueueControllerSuite(unittest.TestCase):
             {"status": "OK", "data": {"key": "value"}, "code": 200})
 
     @mock.patch("src.queue.util")
+    @mock.patch("src.queue.pymongo")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_validate(self, mock_session, mock_util):
+    def test_validate(self, mock_session, mock_pymongo, mock_util):
         controller = queue.QueueController(args=self.args, logger=mock.Mock())
         mock_util.URI.side_effect = ValueError()
         mock_util.readwriteDirectory.side_effect = ValueError()
@@ -156,8 +159,9 @@ class QueueControllerSuite(unittest.TestCase):
             controller._validate_service_dir("abc")
 
     @mock.patch("src.queue.util")
+    @mock.patch("src.queue.pymongo")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_create_session(self, mock_session, mock_util):
+    def test_create_session(self, mock_session, mock_pymongo, mock_util):
         controller = queue.QueueController(args=self.args, logger=mock.Mock())
         with self.assertRaises(AttributeError):
             controller._create_session(None)
@@ -179,15 +183,17 @@ class QueueControllerSuite(unittest.TestCase):
         self.assertTrue(isinstance(session, simple.SimpleSession))
 
     @mock.patch("src.queue.util")
+    @mock.patch("src.queue.pymongo")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_pretty_name(self, mock_session, mock_util):
+    def test_pretty_name(self, mock_session, mock_pymongo, mock_util):
         controller = queue.QueueController(args=self.args, logger=mock.Mock())
         self.assertEqual(controller._pretty_name(controller), "QueueController")
         self.assertEqual(controller._pretty_name(queue.QueueController), "QueueController")
 
     @mock.patch("src.queue.util")
+    @mock.patch("src.queue.pymongo")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_get_status_dict(self, mock_session, mock_util):
+    def test_get_status_dict(self, mock_session, mock_pymongo, mock_util):
         controller = queue.QueueController(args=self.args, logger=mock.Mock())
         metrics = controller.get_status_dict()
         self.assertEqual(metrics["code"], "TEST")
@@ -201,19 +207,27 @@ class QueueControllerSuite(unittest.TestCase):
         self.assertTrue("storage_url" in metrics)
 
     @mock.patch("src.queue.util")
+    @mock.patch("src.queue.pymongo")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_start(self, mock_session, mock_util):
+    def test_start(self, mock_session, mock_pymongo, mock_util):
         controller = queue.QueueController(args=self.args, logger=mock.Mock())
         controller.start()
-        test_scheduler.start_maintenance.assert_called_once_with()
-        test_scheduler.start.assert_called_once_with()
+        controller.session.scheduler.start_maintenance.assert_called_once_with()
+        controller.session.scheduler.start.assert_called_once_with()
+        self.assertTrue(controller.client.queue.submissions.create_index.called)
+        self.assertTrue(controller.client.queue.tasks.create_index.called)
 
     @mock.patch("src.queue.util")
+    @mock.patch("src.queue.pymongo")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_stop(self, mock_session, mock_util):
+    def test_stop(self, mock_session, mock_pymongo, mock_util):
+        test_mongo_client = mock.Mock()
+        mock_pymongo.MongoClient = test_mongo_client
         controller = queue.QueueController(args=self.args, logger=mock.Mock())
         controller.stop()
-        test_scheduler.stop.assert_called_once_with()
+        controller.session.scheduler.stop.assert_called_once_with()
+        controller.client.close.assert_called_once_with()
+
 # pylint: enable=W0212,protected-access,W0613,unused-argument
 
 class QueueConfSuite(unittest.TestCase):
