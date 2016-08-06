@@ -19,6 +19,8 @@
 
 import inspect
 import os
+import shlex
+import types
 import cherrypy
 from jinja2 import Environment, FileSystemLoader
 from init import STATIC_PATH
@@ -27,6 +29,118 @@ import src.simple as simple
 import src.spark as spark
 import src.submission as submission
 import src.util as util
+
+class QueueConf(object):
+    """
+    Global Queue configuration similar to org.apache.spark.sql.SQLContext. Provides basic interface
+    to add and extract options for keys.
+    """
+    def __init__(self):
+        # private configuration map
+        self.__configuration = {}
+
+    def setConf(self, key, value):
+        """
+        Set configuration 'key -> value', if key is invalid, e.g. None, raises AttributeError.
+
+        :param key: option key
+        :param value: option value
+        """
+        if not key:
+            raise AttributeError("Invalid key provided for configuration '%s -> %s'" % (key, value))
+        self.__configuration[key] = value
+
+    def setAllConf(self, options):
+        """
+        Set configuration using map of options, each pair is 'key -> value', similar rules apply to
+        each option. Raises AttributeError, if options map is not of DictType.
+
+        :param options: map of options
+        """
+        if not isinstance(options, types.DictType):
+            raise TypeError("Expected dict object, got %s" % options)
+        for key, value in options.items():
+            self.setConf(key, value)
+
+    def getConf(self, key):
+        """
+        Extract raw configuration value.
+
+        :param key: option key
+        :return: option value or None if key does not exist
+        """
+        return self.__configuration[key] if key in self.__configuration else None
+
+    def getConfString(self, key):
+        """
+        Get option value as string. None will be converted into string.
+
+        :param key: option key
+        :return: option value as string
+        """
+        return str(self.getConf(key))
+
+    def getConfBoolean(self, key):
+        """
+        Get option value as boolean. None will be converted into boolean.
+
+        :param key: option key
+        :return: option value as boolean
+        """
+        return bool(self.getConf(key))
+
+    def getConfInt(self, key):
+        """
+        Get option value as int. None will be converted into int.
+
+        :param key: option key
+        :return: option value as int
+        """
+        return int(self.getConf(key))
+
+    def getConfFloat(self, key):
+        """
+        Get option value as float. None will be converted into float.
+
+        :param key: option key
+        :return: option value as float
+        """
+        return float(self.getConf(key))
+
+    def contains(self, key):
+        """
+        Return True if key is in configuration, False otherwise.
+
+        :param key: option key
+        :return: True, if key exists, False otherwise
+        """
+        return key in self.__configuration
+
+    def copy(self):
+        """
+        Return dict copy of all options in configuration.
+
+        :return: copy of configuration
+        """
+        return self.__configuration.copy()
+
+    @staticmethod
+    def parse(raw_string):
+        """
+        Parse raw string of configuration options into map of 'key -> value' pairs.
+
+        :param raw_string: raw configuration string
+        :return: options map of key -> value pairs
+        """
+        if not raw_string:
+            return {}
+        arr = shlex.split(raw_string)
+        # each element in array is a key-value pair, key should not contain '=' is part of name
+        def convert_tuple(elem):
+            lst = elem.split("=", 1)
+            return (lst[0], lst[1]) if len(lst) == 2 else None
+        conv = [convert_tuple(x) for x in arr]
+        return dict([pair for pair in conv if pair])
 
 # Loading jinja templates, we bind web directory to serve as collection of views
 env = Environment(loader=FileSystemLoader(os.path.join(STATIC_PATH, "view")))
@@ -127,15 +241,17 @@ class QueueController(object):
         self.name = "QUEUE"
         self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
         # parse queue configuration based on additional arguments passed
-        conf = util.QueueConf()
+        conf = QueueConf()
         conf.setAllConf(args)
         # log options processed
         all_options = ["  %s -> %s" % (key, value) for key, value in conf.copy().items()]
         self.logger.debug("Configuration:\n%s" % "\n".join(all_options))
         # resolve options either directly or through session and other services
-        self.working_dir = util.readwriteDirectory(conf.getConfString(const.OPT_WORKING_DIR))
-        self.service_dir = util.readonlyDirectory(conf.getConfString(const.OPT_SERVICE_DIR))
+        self.mongodb_url = self._validate_mongodb_url(conf.getConfString(const.OPT_MONGODB_URL))
+        self.working_dir = self._validate_working_dir(conf.getConfString(const.OPT_WORKING_DIR))
+        self.service_dir = self._validate_service_dir(conf.getConfString(const.OPT_SERVICE_DIR))
         self.session = self._create_session(conf)
+        # self.client = MongoClient(self.mongodb_url)
         self.api = RestApiDispatcher(self.session)
 
     def _create_session(self, conf):
@@ -145,7 +261,7 @@ class QueueController(object):
         :param conf: QueueConf instance
         :return: Session instance
         """
-        if not isinstance(conf, util.QueueConf):
+        if not isinstance(conf, QueueConf):
             raise AttributeError("Invalid configuration, got %s" % conf)
         system_code = conf.getConf(const.OPT_SYSTEM_CODE)
         session_class = None
@@ -166,6 +282,27 @@ class QueueController(object):
         """
         return obj.__name__ if inspect.isclass(obj) else type(obj).__name__
 
+    def _validate_mongodb_url(self, url):
+        try:
+            return util.URI(url).url
+        except:
+            raise StandardError(
+                "Invalid Mongo DB url '%s', expected mongodb://[user:password@]host:port" % url)
+
+    def _validate_working_dir(self, dirpath):
+        try:
+            return util.readwriteDirectory(dirpath)
+        except:
+            raise StandardError(
+                "Invalid working directory '%s', expected read-write directory" % dirpath)
+
+    def _validate_service_dir(self, dirpath):
+        try:
+            return util.readonlyDirectory(dirpath)
+        except:
+            raise StandardError(
+                "Invalid service directory '%s', expected read-only directory" % dirpath)
+
     def get_status_dict(self):
         """
         Get dictionary of all statuses, metrics from session and scheduler.
@@ -180,6 +317,7 @@ class QueueController(object):
         session_status["code"] = self.session.system_code()
         # system URI can be None
         sys_uri = self.session.system_uri()
+        session_status["storage_url"] = self.mongodb_url
         session_status["url"] = {"href": sys_uri.url, "alias": sys_uri.alias} if sys_uri else None
         session_status["status"] = self.session.status()
         # scheduler metrics

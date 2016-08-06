@@ -49,7 +49,8 @@ class Session(object):
     def create_task(self, submission):
         """
         Create task from provided submission. If submission is invalid or cannot be converted into
-        task, method should raise an error.
+        task, method should raise an error. Task must have the same 'uid' field as submission, this
+        allows to index the same column and query by the same value.
 
         :param: Submission instance
         :return: Task instance for this submission

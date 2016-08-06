@@ -80,6 +80,9 @@ class TaskSuite(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             self.task.cancel()
 
+    def test_dumps(self):
+        self.assertEqual(self.task.dumps(), None)
+
 class MessageSuite(unittest.TestCase):
     def test_init(self):
         msg = scheduler.Message("status", a=1, b="a")

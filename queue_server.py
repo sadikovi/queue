@@ -70,9 +70,14 @@ def create_cli_parser():
         help="service directory to traverse (jars, text files), must have read access")
     generic_group.add_argument(
         "--%s" % qconst.OPT_SYSTEM_CODE, default="", metavar="CODE",
-        help="under system code to use, e.g. SPARK")
+        help="under-system code to use, e.g. SPARK")
+    generic_group.add_argument(
+        "--%s" % qconst.OPT_MONGODB_URL, default="", metavar="MONGO",
+        help="mongo db url in format mongodb://host:port or mongodb://user:password@host:port")
     # add group for Spark options
-    spark_group = parser.add_argument_group("SPARK", "arguments to create Spark session/scheduler")
+    spark_group = parser.add_argument_group(
+        "SPARK", "arguments to create Spark session/scheduler, " +
+        "take effect if SPARK under-system is selected")
     spark_group.add_argument(
         "--%s" % qconst.OPT_SPARK_MASTER, default="", help="Spark master address (default: '')")
     spark_group.add_argument(

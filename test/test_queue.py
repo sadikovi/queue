@@ -140,16 +140,30 @@ class QueueControllerSuite(unittest.TestCase):
             queue.rest_json_out(test3).__call__(),
             {"status": "OK", "data": {"key": "value"}, "code": 200})
 
-    @mock.patch("src.queue.util.readwriteDirectory")
-    @mock.patch("src.queue.util.readonlyDirectory")
+    @mock.patch("src.queue.util")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_create_session(self, mock_session, mock_r, mock_rw):
+    def test_validate(self, mock_session, mock_util):
+        controller = queue.QueueController(args=self.args, logger=mock.Mock())
+        mock_util.URI.side_effect = ValueError()
+        mock_util.readwriteDirectory.side_effect = ValueError()
+        mock_util.readonlyDirectory.side_effect = ValueError()
+        # test for all validations in controller
+        with self.assertRaises(StandardError):
+            controller._validate_mongodb_url("abc")
+        with self.assertRaises(StandardError):
+            controller._validate_working_dir("abc")
+        with self.assertRaises(StandardError):
+            controller._validate_service_dir("abc")
+
+    @mock.patch("src.queue.util")
+    @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
+    def test_create_session(self, mock_session, mock_util):
         controller = queue.QueueController(args=self.args, logger=mock.Mock())
         with self.assertRaises(AttributeError):
             controller._create_session(None)
         with self.assertRaises(AttributeError):
             controller._create_session({"a": 1})
-        conf = util.QueueConf()
+        conf = queue.QueueConf()
         with self.assertRaises(StandardError):
             controller._create_session(conf)
         # check spark session
@@ -157,25 +171,23 @@ class QueueControllerSuite(unittest.TestCase):
         session = controller._create_session(conf)
         self.assertTrue(isinstance(session, spark.SparkSession))
         # check simple session
-        conf = util.QueueConf()
+        conf = queue.QueueConf()
         conf.setConf(const.OPT_SYSTEM_CODE, simple.SIMPLE_SYSTEM_CODE)
         conf.setConf(const.OPT_SCHEDULER_TIMEOUT, 1.0)
         conf.setConf(const.OPT_NUM_PARALLEL_TASKS, 1)
         session = controller._create_session(conf)
         self.assertTrue(isinstance(session, simple.SimpleSession))
 
-    @mock.patch("src.queue.util.readwriteDirectory")
-    @mock.patch("src.queue.util.readonlyDirectory")
+    @mock.patch("src.queue.util")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_pretty_name(self, mock_session, mock_r, mock_rw):
+    def test_pretty_name(self, mock_session, mock_util):
         controller = queue.QueueController(args=self.args, logger=mock.Mock())
         self.assertEqual(controller._pretty_name(controller), "QueueController")
         self.assertEqual(controller._pretty_name(queue.QueueController), "QueueController")
 
-    @mock.patch("src.queue.util.readwriteDirectory")
-    @mock.patch("src.queue.util.readonlyDirectory")
+    @mock.patch("src.queue.util")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_get_status_dict(self, mock_session, mock_r, mock_rw):
+    def test_get_status_dict(self, mock_session, mock_util):
         controller = queue.QueueController(args=self.args, logger=mock.Mock())
         metrics = controller.get_status_dict()
         self.assertEqual(metrics["code"], "TEST")
@@ -186,28 +198,119 @@ class QueueControllerSuite(unittest.TestCase):
         self.assertEqual(metrics["scheduler"]["metrics"], {"a": 1, "b": 2})
         self.assertTrue("ex1" in metrics["scheduler"]["is_alive_statuses"])
         self.assertTrue("ex2" in metrics["scheduler"]["is_alive_statuses"])
+        self.assertTrue("storage_url" in metrics)
 
-    @mock.patch("src.queue.util.readwriteDirectory")
-    @mock.patch("src.queue.util.readonlyDirectory")
+    @mock.patch("src.queue.util")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_start(self, mock_session, mock_r, mock_rw):
+    def test_start(self, mock_session, mock_util):
         controller = queue.QueueController(args=self.args, logger=mock.Mock())
         controller.start()
         test_scheduler.start_maintenance.assert_called_once_with()
         test_scheduler.start.assert_called_once_with()
 
-    @mock.patch("src.queue.util.readwriteDirectory")
-    @mock.patch("src.queue.util.readonlyDirectory")
+    @mock.patch("src.queue.util")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
-    def test_stop(self, mock_session, mock_r, mock_rw):
+    def test_stop(self, mock_session, mock_util):
         controller = queue.QueueController(args=self.args, logger=mock.Mock())
         controller.stop()
         test_scheduler.stop.assert_called_once_with()
 # pylint: enable=W0212,protected-access,W0613,unused-argument
 
+class QueueConfSuite(unittest.TestCase):
+    def test_set_conf(self):
+        conf = queue.QueueConf()
+        with self.assertRaises(AttributeError):
+            conf.setConf(None, None)
+        with self.assertRaises(AttributeError):
+            conf.setConf("", None)
+        # non-empty key and None value should succeed
+        conf.setConf("key", None)
+        self.assertEqual(conf.getConf("key"), None)
+
+    def test_set_all_conf(self):
+        conf = queue.QueueConf()
+        with self.assertRaises(TypeError):
+            conf.setAllConf(None)
+        with self.assertRaises(TypeError):
+            conf.setAllConf([])
+        conf.setAllConf({"a": 1, "b": True})
+        self.assertEqual(conf.getConf("a"), 1)
+        self.assertEqual(conf.getConf("b"), True)
+
+    def test_get_conf(self):
+        conf = queue.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", None)
+        self.assertEqual(conf.getConf("a"), 1)
+        self.assertEqual(conf.getConf("b"), None)
+        self.assertEqual(conf.getConf("c"), None)
+
+    def test_get_conf_string(self):
+        conf = queue.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", None)
+        self.assertEqual(conf.getConfString("a"), "1")
+        self.assertEqual(conf.getConfString("b"), "None")
+        self.assertEqual(conf.getConfString("c"), "None")
+
+    def test_get_conf_boolean(self):
+        conf = queue.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", None)
+        conf.setConf("c", False)
+        self.assertEqual(conf.getConfBoolean("a"), True)
+        self.assertEqual(conf.getConfBoolean("b"), False)
+        self.assertEqual(conf.getConfBoolean("c"), False)
+
+    def test_get_conf_int(self):
+        conf = queue.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", "2")
+        conf.setConf("c", None)
+        conf.setConf("d", False)
+        self.assertEqual(conf.getConfInt("a"), 1)
+        self.assertEqual(conf.getConfInt("b"), 2)
+        with self.assertRaises(TypeError):
+            conf.getConfInt("c")
+        self.assertEqual(conf.getConfInt("d"), 0)
+
+    def test_get_conf_float(self):
+        conf = queue.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", "2.0")
+        conf.setConf("c", None)
+        conf.setConf("d", False)
+        self.assertEqual(conf.getConfFloat("a"), 1.0)
+        self.assertEqual(conf.getConfFloat("b"), 2.0)
+        with self.assertRaises(TypeError):
+            conf.getConfFloat("c")
+        self.assertEqual(conf.getConfFloat("d"), 0.0)
+
+    def test_contains(self):
+        conf = queue.QueueConf()
+        conf.setConf("a", 1)
+        conf.setConf("b", None)
+        self.assertEqual(conf.contains("a"), True)
+        self.assertEqual(conf.contains("b"), True)
+        self.assertEqual(conf.contains("c"), False)
+
+    def test_parse(self):
+        self.assertEqual(queue.QueueConf.parse(None), {})
+        self.assertEqual(queue.QueueConf.parse(""), {})
+        self.assertEqual(queue.QueueConf.parse("a=1 b=2 c='3 4'"), {"a": "1", "b": "2", "c": "3 4"})
+        self.assertEqual(queue.QueueConf.parse("a=1 b= c"), {"a": "1", "b": ""})
+        self.assertEqual(queue.QueueConf.parse("a=1 b=2=3"), {"a": "1", "b": "2=3"})
+
+    def test_copy(self):
+        conf = queue.QueueConf()
+        opts = {"a": 1, "b": True, "c": 1.0}
+        conf.setAllConf(opts)
+        self.assertEqual(conf.copy(), opts)
+
 # Load test suites
 def suites():
     return [
         QueueSuite,
-        QueueControllerSuite
+        QueueControllerSuite,
+        QueueConfSuite
     ]

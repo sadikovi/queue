@@ -119,6 +119,16 @@ class Task(object):
         """
         raise NotImplementedError("Not implemented")
 
+    def dumps(self):
+        """
+        Return dictionary of key-value pairs (can be nested) to display as task info. This is used
+        solely for the purpose of showing in UI and will be converted into JSON.  Front-end must
+        know how to parse task's generated JSON.
+
+        :return: dictionary of key-value pairs to display
+        """
+        return None
+
 class InterruptedException(Exception):
     """
     Base class for interrupted exceptions, these errors are only raised when either task or
