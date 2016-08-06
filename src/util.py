@@ -143,6 +143,8 @@ class URI(object):
         self._url = uri.geturl()
         # Alias for URL if it is too long, if None provided url is used
         self._alias = alias
+        self._user = uri.username
+        self._password = uri.password
 
     @property
     def host(self):
@@ -171,6 +173,14 @@ class URI(object):
     @property
     def alias(self):
         return self._alias if self._alias else self._url
+
+    @property
+    def user(self):
+        return self._user
+
+    @property
+    def password(self):
+        return self._password
 
 def _safe_conversion(value, func, fail, msg):
     """

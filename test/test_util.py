@@ -178,6 +178,7 @@ class URISuite(unittest.TestCase):
     def setUp(self):
         self.uri1 = util.URI("http://localhost:8080", "Spark UI")
         self.uri2 = util.URI("spark://sandbox:7077")
+        self.uri3 = util.URI("mongodb://user:password@127.0.0.1:3001", "Mongo")
 
     def test_init(self):
         uri = util.URI("http://localhost:8080")
@@ -200,30 +201,47 @@ class URISuite(unittest.TestCase):
     def test_host(self):
         self.assertEqual(self.uri1.host, "localhost")
         self.assertEqual(self.uri2.host, "sandbox")
+        self.assertEqual(self.uri3.host, "127.0.0.1")
 
     def test_port(self):
         self.assertEqual(self.uri1.port, 8080)
         self.assertEqual(self.uri2.port, 7077)
+        self.assertEqual(self.uri3.port, 3001)
 
     def test_scheme(self):
         self.assertEqual(self.uri1.scheme, "http")
         self.assertEqual(self.uri2.scheme, "spark")
+        self.assertEqual(self.uri3.scheme, "mongodb")
 
     def test_netloc(self):
         self.assertEqual(self.uri1.netloc, "localhost:8080")
         self.assertEqual(self.uri2.netloc, "sandbox:7077")
+        self.assertEqual(self.uri3.netloc, "user:password@127.0.0.1:3001")
 
     def test_fragment(self):
         self.assertEqual(self.uri1.fragment, "")
         self.assertEqual(self.uri2.fragment, "")
+        self.assertEqual(self.uri3.fragment, "")
 
     def test_url(self):
         self.assertEqual(self.uri1.url, "http://localhost:8080")
         self.assertEqual(self.uri2.url, "spark://sandbox:7077")
+        self.assertEqual(self.uri3.url, "mongodb://user:password@127.0.0.1:3001")
 
     def test_alias(self):
         self.assertEqual(self.uri1.alias, "Spark UI")
         self.assertEqual(self.uri2.alias, "spark://sandbox:7077")
+        self.assertEqual(self.uri3.alias, "Mongo")
+
+    def test_user(self):
+        self.assertEqual(self.uri1.user, None)
+        self.assertEqual(self.uri2.user, None)
+        self.assertEqual(self.uri3.user, "user")
+
+    def test_password(self):
+        self.assertEqual(self.uri1.password, None)
+        self.assertEqual(self.uri2.password, None)
+        self.assertEqual(self.uri3.password, "password")
 
 class QueueConfSuite(unittest.TestCase):
     def test_set_conf(self):
