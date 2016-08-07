@@ -18,7 +18,6 @@
 #
 
 import datetime
-import logging
 import os
 import urlparse
 
@@ -213,24 +212,6 @@ def safe_dict(value, fail=False):
     Safe conversion to dict.
     """
     return _safe_conversion(value, dict, fail, "Failed to convert '%s' into 'dict', reason: %s")
-
-# == Logging related methods and classes ==
-def get_default_logger(name):
-    """
-    Internal method to set default logger. Should be moved into utility functions or unified
-    package instead. Creates logger for name provided.
-
-    :param name: logger name
-    :return: default logger
-    """
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    if not logger.handlers: # pragma: no cover
-        form = logging.Formatter("LOG :: %(asctime)s :: %(name)s :: %(levelname)s :: %(message)s")
-        stderr = logging.StreamHandler()
-        stderr.setFormatter(form)
-        logger.addHandler(stderr)
-    return logger
 
 # == Datetime related methods and classes ==
 def utcnow(delay=0):

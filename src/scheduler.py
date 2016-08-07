@@ -23,6 +23,7 @@ import Queue as threadqueue
 import threading
 import time
 import src.const as const
+from src.log import logger
 import src.util as util
 
 # == Task statuses ==
@@ -210,12 +211,11 @@ class TaskThread(threading.Thread):
     failed, otherwise succeeded. Task can also be cancelled during execution. Note that task does
     not guarantee that worker thread will exit correctly, this depends on actual implementation.
     """
-    def __init__(self, task, logger=None):
+    def __init__(self, task):
         """
         Create new instance of TaskThread. Note that task block must be serializable with pickle.
 
         :param task: code to execute for this task thread
-        :param logger: available logger function, uses default if None
         """
         super(TaskThread, self).__init__()
         # task is by definition a daemon thread
@@ -230,7 +230,6 @@ class TaskThread(threading.Thread):
         self.__status = TASK_PENDING
         # setting up logger
         self.name = "Task[%s]" % self.__uid
-        self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
         # different work statuses
         self.__cancel = threading.Event()
         # callbacks
@@ -279,7 +278,7 @@ class TaskThread(threading.Thread):
         """
         Cancel current thread and potentially running task.
         """
-        self.logger.debug("Requested cancellation of task")
+        logger.debug("%s - Requested cancellation of task", self.name)
         self.__cancel.set()
 
     @property
@@ -304,7 +303,7 @@ class TaskThread(threading.Thread):
             if func:
                 func(**kwargs)
         except Exception as e:
-            self.logger.debug("Failed to execute '%s(%s)', reason=%s", func, kwargs, e)
+            logger.debug("%s - Failed to execute '%s(%s)', reason=%s", self.name, func, kwargs, e)
         # pylint: enable=W0703,broad-except
 
     def run(self):
@@ -314,7 +313,7 @@ class TaskThread(threading.Thread):
         self.__status = TASK_STARTED
         # try launching listener callback, note that failure should not affect execution of task
         self._safe_exec(self.on_task_started, uid=self.__uid)
-        self.logger.debug("Started, time=%s", self._get_metric("starttime"))
+        logger.debug("%s - Started, time=%s", self.name, self._get_metric("starttime"))
         try:
             msg_queue = threadqueue.Queue()
             wprocess = WorkerThread(self.__task, msg_queue)
@@ -340,7 +339,7 @@ class TaskThread(threading.Thread):
         except Exception as e:
             # any other exception is considered a failure
             self._set_metric("reason", "%s" % e)
-            self.logger.debug("Failure reason=%s", self._get_metric("reason"))
+            logger.debug("%s - Failure reason=%s", self.name, self._get_metric("reason"))
             self.__status = TASK_FAILED
             self._safe_exec(self.on_task_failed, uid=self.__uid, reason=self._get_metric("reason"))
         # pylint: enable=W0703,broad-except
@@ -352,8 +351,8 @@ class TaskThread(threading.Thread):
             self._set_metric("endtime", time.time())
             duration = self._get_metric("endtime") - self._get_metric("starttime")
             self._set_metric("duration", duration)
-        self.logger.debug("Finished, status=%s, time=%s, duration=%s", self.__status,
-                          self._get_metric("endtime"), self._get_metric("duration"))
+        logger.debug("%s - Finished, status=%s, time=%s, duration=%s", self.name, self.__status,
+                     self._get_metric("endtime"), self._get_metric("duration"))
 
 class Executor(multiprocessing.Process):
     """
@@ -363,7 +362,7 @@ class Executor(multiprocessing.Process):
     interface correctly. Takes dictionary of task queues that are mapped to priorities, higher
     priority is checked first.
     """
-    def __init__(self, name, conn, task_queue_map, timeout=0.5, logger=None):
+    def __init__(self, name, conn, task_queue_map, timeout=0.5):
         """
         Create instance of Executor.
 
@@ -371,7 +370,6 @@ class Executor(multiprocessing.Process):
         :param conn: Connection instance to receive and send messages
         :param task_queue_map: task queue as a dict [priority: queue]
         :param timeout: polling interval
-        :param logger: provided logger, if None then default logger is used
         """
         super(Executor, self).__init__()
         self.name = "%s[%s]" % (type(self).__name__, name)
@@ -379,9 +377,6 @@ class Executor(multiprocessing.Process):
         self.conn = conn
         self.task_queue_map = task_queue_map
         self.timeout = validate_timeout(timeout)
-        # if no logger defined create new logger and add null handler
-        self.log_func = logger
-        self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
         # we also keep reference to active task, this will be reassigned for every iteration
         self._active_task = None
         # list of task ids to cancel, we add new task_id when specific message arrives and remove
@@ -397,7 +392,7 @@ class Executor(multiprocessing.Process):
         when task is cancelled, so the subsequent processing of task, will work with updated state.
         :param msg: message to process
         """
-        self.logger.debug("Received message %s", msg)
+        logger.debug("%s - Received message %s", self.name, msg)
         if isinstance(msg, Message):
             if msg.status == EXECUTOR_SHUTDOWN: # pragma: no branch
                 raise ExecutorInterruptedException("Executor shutdown")
@@ -406,12 +401,12 @@ class Executor(multiprocessing.Process):
                 if "task_id" in msg.arguments: # pragma: no branch
                     task_id = msg.arguments["task_id"]
                     self._cancel_task_ids.add(task_id)
-                    self.logger.debug("Registered cancelled task %s", task_id)
+                    logger.debug("%s - Registered cancelled task %s", self.name, task_id)
             else:
                 # valid but unrecognized message, no-op
                 pass
         else:
-            self.logger.info("Invalid message %s is ignored", msg)
+            logger.info("%s - Invalid message %s is ignored", self.name, msg)
 
     def _respond_is_alive(self):
         """
@@ -430,18 +425,18 @@ class Executor(multiprocessing.Process):
         """
         task = None
         for priority in const.PRIORITIES:
-            self.logger.debug("Searching task in queue for priority %s" % priority)
+            logger.debug("%s - Searching task in queue for priority %s", self.name, priority)
             try:
                 task = self.task_queue_map[priority].get(block=False)
             except threadqueue.Empty:
-                self.logger.debug("No tasks available in queue for priority %s" % priority)
+                logger.debug("%s - No tasks available for priority %s", self.name, priority)
             except KeyError:
-                self.logger.debug("Non-existent priority %s skipped" % priority)
+                logger.debug("%s - Non-existent priority %s skipped", self.name, priority)
             else:
                 if task: # pragma: no branch
                     break
         # create thread for task
-        task_thread = TaskThread(task, self.log_func) if task else None
+        task_thread = TaskThread(task) if task else None
         return task_thread
 
     def _process_task(self):
@@ -452,7 +447,7 @@ class Executor(multiprocessing.Process):
         """
         if not self._active_task:
             self._active_task = self._get_new_task()
-            self.logger.warning("New task registered")
+            logger.info("%s - New task registered", self.name)
         # before checking statuses and proceed execution, we check if current task was
         # requested to be cancelled, if yes, we remove it from set of ids.
         if self._active_task and self._active_task.uid in self._cancel_task_ids:
@@ -468,31 +463,31 @@ class Executor(multiprocessing.Process):
                 if self.external_system_available():
                     self._active_task.start()
                     self.conn.send(Message(EXECUTOR_TASK_STARTED, task_id=task_id))
-                    self.logger.info("Started task %s", task_id)
+                    logger.info("%s - Started task %s", self.name, task_id)
                 else:
-                    self.logger.info("External system is not available, will try again later")
+                    logger.info("%s - External system is not available", self.name)
             elif task_status is TASK_STARTED:
                 # task has started and running
                 if self._active_task.is_alive(): # pragma: no branch
-                    self.logger.debug("Ping task %s is alive", task_id)
+                    logger.debug("%s - Ping task %s is alive", self.name, task_id)
             elif task_status is TASK_SUCCEEDED:
                 # task finished successfully
                 self.conn.send(Message(EXECUTOR_TASK_SUCCEEDED, task_id=task_id))
-                self.logger.info("Finished task %s, status %s", task_id, task_status)
+                logger.info("%s - Finished task %s, status %s", self.name, task_id, task_status)
                 self._active_task = None
             elif task_status is TASK_FAILED:
                 # task failed
                 self.conn.send(Message(EXECUTOR_TASK_FAILED, task_id=task_id))
-                self.logger.info("Finished task %s, status %s", task_id, task_status)
+                logger.info("%s - Finished task %s, status %s", self.name, task_id, task_status)
                 self._active_task = None
             elif task_status is TASK_CANCELLED:
                 # task has been cancelled
                 if self._active_task: # pragma: no branch
                     self._active_task = None
             else:
-                self.logger.warning("Unknown status %s for task %s", task_status, task_id)
+                logger.warning("%s - Unknown status %s for %s", self.name, task_status, task_id)
         else:
-            self.logger.debug("No active task registered")
+            logger.debug("%s - No active task registered", self.name)
 
     def _cancel_active_task(self):
         """
@@ -502,10 +497,10 @@ class Executor(multiprocessing.Process):
             task_id = self._active_task.uid
             self._active_task.cancel()
             self.conn.send(Message(EXECUTOR_TASK_CANCELLED, task_id=task_id))
-            self.logger.info("Cancelled task %s", task_id)
+            logger.info("%s - Cancelled task %s", self.name, task_id)
             self._active_task = None
         else:
-            self.logger.info("No active task to cancel")
+            logger.info("%s - No active task to cancel", self.name)
 
     def external_system_available(self):
         """
@@ -528,9 +523,9 @@ class Executor(multiprocessing.Process):
         """
         # we process special case of terminated executor in case someone would launch it again.
         if self._terminated:
-            self.logger.warning("Executor %s has been terminated", self.name)
+            logger.warning("Executor %s has been terminated", self.name)
             return False
-        self.logger.debug("Run iteration for %s, timeout=%s", self.name, self.timeout)
+        logger.debug("%s - Run iteration, timeout=%s", self.name, self.timeout)
         try:
             # send reponse to the scheduler that this executor is up and processing tasks
             self._respond_is_alive()
@@ -540,14 +535,14 @@ class Executor(multiprocessing.Process):
             # check if there is any outstanding task to run, otherwise poll data for current task
             self._process_task()
         except ExecutorInterruptedException:
-            self.logger.info("Requested termination of executor %s", self.name)
+            logger.info("%s - Requested termination of executor", self.name)
             self._terminated = True
             # cancel task that is currently running and clean up state
             self._cancel_active_task()
             return False
         # pylint: disable=W0703,broad-except
         except Exception as e:
-            self.logger.exception("Unrecoverable error %s, terminating executor %s", e, self.name)
+            logger.exception("%s - Unrecoverable error %s, terminating", self.name, e)
             self._terminated = True
             return False
         # pylint: enable=W0703,broad-except
@@ -560,7 +555,7 @@ class Executor(multiprocessing.Process):
         iteration polls new messages from connection and checks running task. If iteration fails we
         immediately return status False.
         """
-        self.logger.info("Start executor %s, time=%s", self.name, time.time())
+        logger.info("Start executor %s, time=%s", self.name, time.time())
         proceed = True
         while proceed: # pragma: no branch
             proceed = self.iteration()
@@ -573,7 +568,7 @@ class Scheduler(object):
     Scheduler class prepares and launches executors and provides means to pass and process tasks
     and messages from executors. Should be one instance per application.
     """
-    def __init__(self, num_executors, timeout=0.5, logger=None):
+    def __init__(self, num_executors, timeout=0.5):
         """
         Create new instance of Scheduler.
 
@@ -581,12 +576,8 @@ class Scheduler(object):
         :param timeout: executor's timeout
         :param logger: executor's logger
         """
-        self.name = "%s" % type(self).__name__
         self.num_executors = validate_num_executors(num_executors)
         self.timeout = validate_timeout(timeout)
-        self.log_func = logger
-        self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
-
         # pipe connections to send and receive messages to/from executors
         self.pipe = {}
         # list of executors that are initialized
@@ -704,7 +695,7 @@ class Scheduler(object):
         clazz = self.executor_class()
         if not inspect.isclass(clazz) or not issubclass(clazz, Executor):
             raise TypeError("Type %s !<: Executor" % clazz)
-        exc = clazz(name, exc_conn, self.task_queue_map, timeout=self.timeout, logger=self.log_func)
+        exc = clazz(name, exc_conn, self.task_queue_map, timeout=self.timeout)
         # update executor with additional options (note that this should be used if custom executor
         # class is provided)
         self.update_executor(exc)
@@ -718,7 +709,7 @@ class Scheduler(object):
         """
         Start scheduler, launches executors asynchronously.
         """
-        self.logger.info("Starting %s '%s' executors", self.num_executors, self.executor_class())
+        logger.info("Starting %s '%s' executors", self.num_executors, self.executor_class())
         # Launch executors and save pipes per each
         for i in range(self.num_executors):
             exc = self._prepare_executor("#%s" % i)
@@ -731,13 +722,13 @@ class Scheduler(object):
         for conn in self.pipe.values():
             conn.send(Message(EXECUTOR_SHUTDOWN))
         # timeout to terminate processes and process remaining messages in Pipe by polling thread
-        self.logger.info("Waiting for termination...")
+        logger.info("Waiting for termination...")
         time.sleep(5)
         for exc in self.executors:
             if exc.is_alive():
                 exc.terminate()
             exc.join()
-        self.logger.info("Terminated executors, cleaning up internal data")
+        logger.info("Terminated executors, cleaning up internal data")
         self.pipe = None
         self.executors = None
         self.task_queue_map = None
@@ -808,7 +799,7 @@ class Scheduler(object):
             if "name" in msg.arguments:
                 exc_name = msg.arguments["name"]
                 self.is_alive_statuses[exc_name] = util.utcnow()
-                self.logger.debug("Updated 'is alive' status for executor %s", exc_name)
+                logger.debug("Updated 'is alive' status for executor %s", exc_name)
 
     def get_is_alive_statuses(self):
         """

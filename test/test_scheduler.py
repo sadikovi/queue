@@ -25,6 +25,8 @@ import mock
 import src.const as const
 import src.scheduler as scheduler
 
+scheduler.logger = mock.Mock()
+
 # Test of miscellaneous methods and constants
 class SchedulerModuleSuite(unittest.TestCase):
     def test_task_statuses(self):
@@ -145,10 +147,9 @@ class WorkerThreadSuite(unittest.TestCase):
 class TaskThreadSuite(unittest.TestCase):
     def setUp(self):
         self.task = mock.create_autospec(scheduler.Task, uid=123)
-        self.logger = mock.Mock()
 
     def test_init_ok(self):
-        thread = scheduler.TaskThread(self.task, self.logger)
+        thread = scheduler.TaskThread(self.task)
         self.assertEqual(thread.daemon, True)
         self.assertEqual(thread.refresh_timeout, 0.5)
         self.assertEqual(thread.uid, 123)
@@ -161,12 +162,12 @@ class TaskThreadSuite(unittest.TestCase):
 
     def test_init_error(self):
         with self.assertRaises(AttributeError):
-            scheduler.TaskThread(mock.Mock(), mock.Mock())
+            scheduler.TaskThread(mock.Mock())
         with self.assertRaises(AttributeError):
-            scheduler.TaskThread(None, mock.Mock())
+            scheduler.TaskThread(None)
 
     def test_set_metric(self):
-        thread = scheduler.TaskThread(self.task, self.logger)
+        thread = scheduler.TaskThread(self.task)
         thread._set_metric("a", 1)
         thread._set_metric("b", None)
         self.assertEqual(thread._get_metric("a"), 1)
@@ -176,21 +177,22 @@ class TaskThreadSuite(unittest.TestCase):
         self.assertEqual(thread._get_metric("a"), 2)
 
     def test_get_metric(self):
-        thread = scheduler.TaskThread(self.task, self.logger)
+        thread = scheduler.TaskThread(self.task)
         thread._set_metric("a", 1)
         self.assertEqual(thread._get_metric("a"), 1)
         self.assertEqual(thread._get_metric("b"), None)
 
     def test_cancel(self):
-        thread = scheduler.TaskThread(self.task, self.logger)
+        thread = scheduler.TaskThread(self.task)
         self.assertEqual(thread.is_cancelled, False)
         thread.cancel()
         self.assertEqual(thread.is_cancelled, True)
 
-    def test_safe_exec(self):
-        thread = scheduler.TaskThread(self.task, self.logger)
+    @mock.patch("src.scheduler.logger")
+    def test_safe_exec(self, mock_logger):
+        thread = scheduler.TaskThread(self.task)
         thread._safe_exec(None)
-        self.assertEqual(self.logger.debug.call_count, 0)
+        self.assertEqual(mock_logger.debug.call_count, 0)
         # function that does not raise error
         ok_func = mock.Mock()
         thread._safe_exec(ok_func, a=1, b=2)
@@ -204,7 +206,7 @@ class TaskThreadSuite(unittest.TestCase):
     @mock.patch("src.scheduler.time")
     def test_run_cancel(self, mock_time):
         mock_time.sleep.return_value = None
-        thread = scheduler.TaskThread(self.task, self.logger)
+        thread = scheduler.TaskThread(self.task)
         thread.cancel()
         thread.run()
         self.assertEqual(thread.status, scheduler.TASK_CANCELLED)
@@ -215,7 +217,7 @@ class TaskThreadSuite(unittest.TestCase):
     @mock.patch("src.scheduler.time")
     def test_run_success(self, mock_time):
         mock_time.sleep.return_value = None
-        thread = scheduler.TaskThread(self.task, self.logger)
+        thread = scheduler.TaskThread(self.task)
         thread.run()
         self.assertEqual(thread.status, scheduler.TASK_SUCCEEDED)
         self.assertNotEqual(thread._get_metric("starttime"), None)
@@ -226,7 +228,7 @@ class TaskThreadSuite(unittest.TestCase):
     def test_run_failure(self, mock_time):
         mock_time.sleep.return_value = None
         self.task.run.side_effect = StandardError("Test")
-        thread = scheduler.TaskThread(self.task, self.logger)
+        thread = scheduler.TaskThread(self.task)
         thread.run()
         self.assertEqual(thread.status, scheduler.TASK_FAILED)
         self.assertNotEqual(thread._get_metric("starttime"), None)
@@ -246,47 +248,48 @@ class ExecutorSuite(unittest.TestCase):
         self.main_conn = mock.Mock()
         self.conn = mock.Mock()
         self.mock_task = mock.create_autospec(scheduler.Task)
-        self.logger = mock.Mock()
 
     def test_init_1(self):
-        exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=1)
         self.assertEqual(exc.name, "Executor[name]")
         self.assertEqual(exc.conn, self.conn)
         self.assertEqual(exc.task_queue_map, self.queue_map)
         self.assertEqual(exc.timeout, 1)
         self.assertEqual(exc._cancel_task_ids, set())
-        self.assertNotEqual(exc.logger, None)
 
     def test_init_2(self):
-        exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=10, logger=None)
+        exc = scheduler.Executor("name", self.conn, self.queue_map, timeout=10)
         self.assertEqual(exc.name, "Executor[name]")
         self.assertEqual(exc.conn, self.conn)
         self.assertEqual(exc.task_queue_map, self.queue_map)
         self.assertEqual(exc.timeout, 10)
         self.assertEqual(exc._cancel_task_ids, set())
-        self.assertNotEqual(exc.logger, None)
 
-    def test_process_message_invalid(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+    @mock.patch("src.scheduler.logger")
+    def test_process_message_invalid(self, mock_logger):
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._process_message(None)
-        exc.logger.info.assert_called_once_with("Invalid message %s is ignored", None)
+        mock_logger.info.assert_called_once_with(
+            "%s - Invalid message %s is ignored", "Executor[a]", None)
 
     def test_process_message_shutdown(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         msg_mock = mock.create_autospec(scheduler.Message, status=scheduler.EXECUTOR_SHUTDOWN)
         with self.assertRaises(scheduler.ExecutorInterruptedException):
             exc._process_message(msg_mock)
 
-    def test_process_message_cancel_task(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+    @mock.patch("src.scheduler.logger")
+    def test_process_message_cancel_task(self, mock_logger):
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         msg_mock = mock.create_autospec(scheduler.Message, status=scheduler.EXECUTOR_CANCEL_TASK,
                                         arguments={"task_id": "123"})
         exc._process_message(msg_mock)
         self.assertTrue("123" in exc._cancel_task_ids)
-        exc.logger.debug.assert_called_with("Registered cancelled task %s", "123")
+        mock_logger.debug.assert_called_with(
+            "%s - Registered cancelled task %s", "Executor[a]", "123")
 
     def test_respond_is_alive(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._respond_is_alive()
         self.assertEqual(self.conn.send.call_count, 1)
         self.assertEqual(len(self.conn.send.call_args_list), 1)
@@ -295,14 +298,14 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(msg.arguments["name"], "Executor[a]")
 
     def test_get_new_task_empty_map(self):
-        exc = scheduler.Executor("a", self.conn, {}, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, {}, timeout=1)
         self.assertEqual(exc._get_new_task(), None)
 
     def test_get_new_task_empty_queue(self):
         # prepare mock queues
         for queue in self.queue_map.values():
             queue.get.side_effect = threadqueue.Empty()
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         self.assertEqual(exc._get_new_task(), None)
 
     def test_get_new_task_priority2_queue(self):
@@ -311,12 +314,12 @@ class ExecutorSuite(unittest.TestCase):
         self.queue_map[const.PRIORITY_1].get.side_effect = threadqueue.Empty()
         self.queue_map[const.PRIORITY_2].get.return_value = self.mock_task
         # should select priority 2
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         thread = exc._get_new_task()
         self.assertTrue(isinstance(thread, scheduler.TaskThread))
 
     def test_process_task_empty(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         mock_task_thread = mock.Mock()
         exc._get_new_task = mock.Mock()
         exc._get_new_task.return_value = mock_task_thread
@@ -324,7 +327,7 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(exc._active_task, mock_task_thread)
 
     def test_process_task_cancel(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         mock_task_thread = mock.Mock()
         mock_task_thread.uid = "123"
         exc._get_new_task = mock.Mock()
@@ -336,7 +339,7 @@ class ExecutorSuite(unittest.TestCase):
         exc._cancel_active_task.assert_called_once_with()
 
     def test_process_task_pending(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._active_task = mock.create_autospec(scheduler.TaskThread, uid="123",
                                                 status=scheduler.TASK_PENDING)
         exc._process_task()
@@ -346,7 +349,7 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(str(self.conn.send.call_args_list[0]), conn_msg)
 
     def test_process_task_pending_not_available(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._active_task = mock.create_autospec(scheduler.TaskThread, uid="123",
                                                 status=scheduler.TASK_PENDING)
         exc.external_system_available = mock.Mock()
@@ -355,15 +358,16 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(exc._active_task.start.call_count, 0)
         self.assertEqual(self.conn.send.call_count, 0)
 
-    def test_process_task_started(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+    @mock.patch("src.scheduler.logger")
+    def test_process_task_started(self, mock_logger):
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._active_task = mock.create_autospec(scheduler.TaskThread, uid="123", is_alive=True,
                                                 status=scheduler.TASK_STARTED)
         exc._process_task()
-        exc.logger.debug.assert_called_with("Ping task %s is alive", "123")
+        mock_logger.debug.assert_called_with("%s - Ping task %s is alive", "Executor[a]", "123")
 
     def test_process_task_succeeded(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._active_task = mock.create_autospec(scheduler.TaskThread, uid="123",
                                                 status=scheduler.TASK_SUCCEEDED)
         exc._process_task()
@@ -373,7 +377,7 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(exc._active_task, None)
 
     def test_process_task_failed(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._active_task = mock.create_autospec(scheduler.TaskThread, uid="123",
                                                 status=scheduler.TASK_FAILED)
         exc._process_task()
@@ -383,14 +387,14 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(exc._active_task, None)
 
     def test_process_task_cancelled(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._active_task = mock.create_autospec(scheduler.TaskThread, uid="123",
                                                 status=scheduler.TASK_CANCELLED)
         exc._process_task()
         self.assertEqual(exc._active_task, None)
 
     def test_process_task_cancel_ahead(self):
-        exc = scheduler.Executor("a", self.conn, {}, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, {}, timeout=1)
         exc._active_task = mock.create_autospec(scheduler.TaskThread, uid="123",
                                                 status=scheduler.TASK_PENDING)
         exc._cancel_task_ids.add("123")
@@ -398,20 +402,22 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(exc._active_task, None)
         self.assertTrue("123" not in exc._cancel_task_ids)
 
-    def test_process_task_no_tasks(self):
-        exc = scheduler.Executor("a", self.conn, {}, timeout=1, logger=self.logger)
+    @mock.patch("src.scheduler.logger")
+    def test_process_task_no_tasks(self, mock_logger):
+        exc = scheduler.Executor("a", self.conn, {}, timeout=1)
         exc._active_task = None
         exc._process_task()
-        exc.logger.debug.assert_called_with("No active task registered")
+        mock_logger.debug.assert_called_with("%s - No active task registered", "Executor[a]")
 
-    def test_cancel_active_task_1(self):
-        exc = scheduler.Executor("a", self.conn, {}, timeout=1, logger=self.logger)
+    @mock.patch("src.scheduler.logger")
+    def test_cancel_active_task_1(self, mock_logger):
+        exc = scheduler.Executor("a", self.conn, {}, timeout=1)
         exc._active_task = None
         exc._cancel_active_task()
-        exc.logger.info.assert_called_once_with("No active task to cancel")
+        mock_logger.info.assert_called_once_with("%s - No active task to cancel", "Executor[a]")
 
     def test_cancel_active_task_2(self):
-        exc = scheduler.Executor("a", self.conn, {}, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, {}, timeout=1)
         mock_task = mock.create_autospec(scheduler.TaskThread, uid="123",
                                          status=scheduler.TASK_STARTED)
         exc._active_task = mock_task
@@ -423,14 +429,14 @@ class ExecutorSuite(unittest.TestCase):
         self.assertEqual(str(self.conn.send.call_args_list[0]), conn_msg)
 
     def test_iteration_executor_terminated(self):
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._terminated = True
         self.assertEqual(exc.iteration(), False)
 
     def test_iteration_valid_task_poll(self):
         self.conn.poll.return_value = True
         self.conn.recv.return_value = 123
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._process_message = mock.create_autospec(exc._process_message)
         exc._process_task = mock.create_autospec(exc._process_task)
         self.assertEqual(exc.iteration(), True)
@@ -439,7 +445,7 @@ class ExecutorSuite(unittest.TestCase):
 
     def test_iteration_valid_task_no_poll(self):
         self.conn.poll.return_value = False
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._process_message = mock.create_autospec(exc._process_message)
         exc._process_task = mock.create_autospec(exc._process_task)
         self.assertEqual(exc.iteration(), True)
@@ -448,7 +454,7 @@ class ExecutorSuite(unittest.TestCase):
 
     def test_iteration_terminate(self):
         self.conn.poll.return_value = True
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._process_message = mock.create_autospec(exc._process_message)
         exc._process_message.side_effect = scheduler.ExecutorInterruptedException()
         exc._process_task = mock.create_autospec(exc._process_task)
@@ -460,7 +466,7 @@ class ExecutorSuite(unittest.TestCase):
 
     def test_iteration_terminate_global(self):
         self.conn.poll.return_value = True
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc._process_message = mock.create_autospec(exc._process_message)
         exc._process_message.side_effect = StandardError()
         self.assertEqual(exc.iteration(), False)
@@ -468,7 +474,7 @@ class ExecutorSuite(unittest.TestCase):
     @mock.patch("src.scheduler.time")
     def test_run(self, mock_time):
         # test time.sleep, if iteration returns True, `time.sleep` is called
-        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1, logger=self.logger)
+        exc = scheduler.Executor("a", self.conn, self.queue_map, timeout=1)
         exc.iteration = mock.create_autospec(exc.iteration, return_value=False)
         self.assertEqual(exc.run(), False)
         self.assertEqual(mock_time.sleep.call_count, 0)
@@ -482,11 +488,10 @@ class ExecutorSuite(unittest.TestCase):
 # pylint: disable=W0212,protected-access
 class SchedulerSuite(unittest.TestCase):
     def setUp(self):
-        self.logger = mock.Mock()
         self.task = mock.create_autospec(scheduler.Task, uid="123")
 
     def test_init_1(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         self.assertEqual(sched.num_executors, 3)
         self.assertEqual(sched.timeout, 0.5)
         self.assertEqual(sched.on_task_started, None)
@@ -496,38 +501,38 @@ class SchedulerSuite(unittest.TestCase):
 
     def test_init_2(self):
         with self.assertRaises(ValueError):
-            scheduler.Scheduler("abc", 0.5, self.logger)
+            scheduler.Scheduler("abc", 0.5)
 
     def test_get_num_executors(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         self.assertEqual(sched.get_num_executors(), 3)
-        sched = scheduler.Scheduler(1, 0.5, self.logger)
+        sched = scheduler.Scheduler(1, 0.5)
         self.assertEqual(sched.get_num_executors(), 1)
 
     def test_get_metric(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         self.assertEqual(sched._get_metric("a"), None)
 
     def test_set_metric(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         sched._set_metric("a", 1)
         self.assertEqual(sched._get_metric("a"), 1)
         sched._set_metric("a", 2)
         self.assertEqual(sched._get_metric("a"), 2)
 
     def test_increment_metric_nonexistent(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         sched._increment_metric("a")
         self.assertEqual(sched._get_metric("a"), None)
 
     def test_increment_metric_convert_error(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         sched._set_metric("a", "b")
         sched._increment_metric("a")
         self.assertEqual(sched._get_metric("a"), 0)
 
     def test_increment_metric_correct(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         sched._set_metric("a", "1")
         sched._increment_metric("a")
         self.assertEqual(sched._get_metric("a"), 2)
@@ -535,13 +540,13 @@ class SchedulerSuite(unittest.TestCase):
         self.assertEqual(sched._get_metric("a"), 3)
 
     def test_get_metrics(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         sched._set_metric("a", "1")
         sched._set_metric("b", 1)
         self.assertEqual(sched.get_metrics(), {"a": "1", "b": 1})
 
     def test_prepare_executor(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         # prepare mock executor
         exc = sched._prepare_executor("test")
         # assertions
@@ -552,14 +557,14 @@ class SchedulerSuite(unittest.TestCase):
         self.assertTrue(exc.name in sched.pipe)
 
     def test_prepare_executor_wrong_type(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         sched.executor_class = mock.Mock()
         # prepare mock executor
         with self.assertRaises(TypeError):
             sched._prepare_executor("test")
 
     def test_start(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         mock_exc = mock.Mock()
         sched._prepare_executor = mock.Mock()
         sched._prepare_executor.return_value = mock_exc
@@ -572,7 +577,7 @@ class SchedulerSuite(unittest.TestCase):
     @mock.patch("src.scheduler.time")
     def test_stop(self, mock_time):
         mock_time.sleep.return_value = None
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         mock_conn = mock.Mock()
         sched.pipe = {"executor_name": mock_conn}
         mock_exc_1 = mock.Mock()
@@ -595,18 +600,18 @@ class SchedulerSuite(unittest.TestCase):
         mock_exc_2.join.assert_called_once_with()
 
     def test_submit_wrong_type(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         with self.assertRaises(TypeError):
             sched.submit(mock.Mock())
 
     def test_submit_wrong_priority(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         self.task.priority = "abc"
         with self.assertRaises(KeyError):
             sched.submit(self.task)
 
     def test_submit_correct(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         self.task.priority = const.PRIORITY_0
         sched.task_queue_map = {
             const.PRIORITY_0: mock.Mock(),
@@ -620,7 +625,7 @@ class SchedulerSuite(unittest.TestCase):
         self.assertEqual(sched.task_queue_map[const.PRIORITY_2].put_nowait.call_count, 0)
 
     def test_cancel(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         # no task_id provided -> no-op
         sched.pipe = mock.Mock()
         sched.cancel(None)
@@ -635,7 +640,7 @@ class SchedulerSuite(unittest.TestCase):
         self.assertEqual(str(mock_conn.send.call_args_list[0]), conn_msg)
 
     def test_process_callback_1(self):
-        sched = scheduler.Scheduler(2, 0.5, self.logger)
+        sched = scheduler.Scheduler(2, 0.5)
         sched.on_task_started = mock.Mock()
         sched.on_task_cancelled = mock.Mock()
         sched.on_task_succeeded = mock.Mock()
@@ -658,7 +663,7 @@ class SchedulerSuite(unittest.TestCase):
         sched.on_task_cancelled.assert_called_once_with([msg4])
 
     def test_process_callback_2(self):
-        sched = scheduler.Scheduler(2, 0.5, self.logger)
+        sched = scheduler.Scheduler(2, 0.5)
         sched.on_task_started = mock.Mock()
         sched.on_task_cancelled = mock.Mock()
         sched.on_task_succeeded = mock.Mock()
@@ -678,7 +683,7 @@ class SchedulerSuite(unittest.TestCase):
         self.assertEqual(sched.on_task_cancelled.call_count, 0)
 
     def test_process_callback_3(self):
-        sched = scheduler.Scheduler(2, 0.5, self.logger)
+        sched = scheduler.Scheduler(2, 0.5)
         sched.on_task_started = mock.Mock()
         sched.on_task_cancelled = mock.Mock()
         sched.on_task_succeeded = mock.Mock()
@@ -695,7 +700,7 @@ class SchedulerSuite(unittest.TestCase):
 
     def test_process_callback_4(self):
         # test of 'is alive' messages
-        sched = scheduler.Scheduler(2, 0.5, self.logger)
+        sched = scheduler.Scheduler(2, 0.5)
         sched.on_is_alive = mock.Mock()
         msg = mock.create_autospec(scheduler.Message, status=scheduler.EXECUTOR_IS_ALIVE)
         conn = mock.Mock()
@@ -708,7 +713,7 @@ class SchedulerSuite(unittest.TestCase):
         sched.on_is_alive.assert_called_once_with([msg])
 
     def test_prepare_polling_thread(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         # check polling thread without consumer
         thread = sched._prepare_polling_thread("test")
         self.assertNotEqual(thread, None)
@@ -716,7 +721,7 @@ class SchedulerSuite(unittest.TestCase):
         self.assertEqual(thread.name, "test")
 
     def test_start_maintenance(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         sched._prepare_polling_thread = mock.Mock()
         mock_thread = mock.Mock()
         sched._prepare_polling_thread.return_value = mock_thread
@@ -728,7 +733,7 @@ class SchedulerSuite(unittest.TestCase):
         sched.start_maintenance()
 
     def test_update_is_alive(self):
-        sched = scheduler.Scheduler(1, 0.5, self.logger)
+        sched = scheduler.Scheduler(1, 0.5)
         msg1 = mock.create_autospec(scheduler.Message, status=scheduler.EXECUTOR_IS_ALIVE,
                                     arguments={"name": "x"})
         msg2 = mock.create_autospec(scheduler.Message, status=scheduler.EXECUTOR_IS_ALIVE,
@@ -740,7 +745,7 @@ class SchedulerSuite(unittest.TestCase):
         self.assertTrue("x" in sched.is_alive_statuses)
 
     def test_get_is_alive_statuses(self):
-        sched = scheduler.Scheduler(3, 0.5, self.logger)
+        sched = scheduler.Scheduler(3, 0.5)
         sched.is_alive_statuses["a"] = 1
         sched.is_alive_statuses["b"] = 2
         copy = sched.get_is_alive_statuses()

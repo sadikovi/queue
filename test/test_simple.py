@@ -24,10 +24,12 @@ import src.const as const
 import src.scheduler as scheduler
 import src.simple as simple
 
+simple.logger = mock.Mock()
+
 # pylint: disable=W0212,protected-access
 class SimpleTaskSuite(unittest.TestCase):
     def test_init(self):
-        task = simple.SimpleTask("123", 123, logger=mock.Mock())
+        task = simple.SimpleTask("123", 123)
         self.assertEqual(task.uid, "123")
         self.assertEqual(task.priority, 123)
         self.assertEqual(task._cancelled, False)
@@ -36,14 +38,14 @@ class SimpleTaskSuite(unittest.TestCase):
 
     @mock.patch("src.simple.time")
     def test_run(self, mock_time):
-        task = simple.SimpleTask("123", 123, logger=mock.Mock())
+        task = simple.SimpleTask("123", 123)
         task.run()
         self.assertEqual(mock_time.sleep.call_count, task._iterations)
         mock_time.sleep.assert_called_with(1.0)
 
     @mock.patch("src.simple.time")
     def test_run_cancel(self, mock_time):
-        task = simple.SimpleTask("123", 123, logger=mock.Mock())
+        task = simple.SimpleTask("123", 123)
         task.is_cancelled = mock.Mock()
         task.is_cancelled.side_effect = [False, False, True]
         task.run()
@@ -51,7 +53,7 @@ class SimpleTaskSuite(unittest.TestCase):
         mock_time.sleep.assert_called_with(1.0)
 
     def test_cancel(self):
-        task = simple.SimpleTask("123", 123, logger=mock.Mock())
+        task = simple.SimpleTask("123", 123)
         self.assertEqual(task._cancelled, False)
         self.assertEqual(task.is_cancelled(), False)
         task.cancel()
@@ -59,7 +61,7 @@ class SimpleTaskSuite(unittest.TestCase):
         self.assertEqual(task.is_cancelled(), True)
 
     def test_serde(self):
-        task = simple.SimpleTask("123", 123, logger=None)
+        task = simple.SimpleTask("123", 123)
         ser = cPickle.dumps(task)
         new_task = cPickle.loads(ser)
         self.assertEqual(new_task.uid, task.uid)
@@ -69,7 +71,7 @@ class SimpleTaskSuite(unittest.TestCase):
 
 class SimpleSessionSuite(unittest.TestCase):
     def setUp(self):
-        self.session = simple.SimpleSession(3, timeout=1.0, logger=mock.Mock())
+        self.session = simple.SimpleSession(3, timeout=1.0)
 
     def test_init(self):
         self.assertEqual(self.session.num_executors, 3)
@@ -97,7 +99,7 @@ class SimpleSessionSuite(unittest.TestCase):
         conf = mock.Mock()
         conf.getConfFloat.return_value = 1.0
         conf.getConfInt.return_value = 10
-        session = simple.SimpleSession.create(conf, mock.Mock(), logger=mock.Mock())
+        session = simple.SimpleSession.create(conf, mock.Mock())
         self.assertEqual(session.timeout, 1.0)
         self.assertEqual(session.num_executors, 10)
 

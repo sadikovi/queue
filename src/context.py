@@ -67,7 +67,7 @@ class Session(object):
         raise NotImplementedError("Not implemented")
 
     @classmethod
-    def create(cls, conf, working_dir, logger):
+    def create(cls, conf, working_dir):
         """
         Create instance of session using dictionary of configuration options. All options are in
         format "group.name", where "group" is option group, e.g. spark, and "name" is a name of
@@ -75,7 +75,6 @@ class Session(object):
 
         :param conf: QueueConf instance
         :param working_dir: verified working directory
-        :param logger: logger function
         :return: instance of session
         """
         raise NotImplementedError("Not implemented")

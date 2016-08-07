@@ -43,7 +43,7 @@ class SessionSuite(unittest.TestCase):
 
     def test_create(self):
         with self.assertRaises(NotImplementedError):
-            context.Session.create({"a": 1}, "work-dir", None)
+            context.Session.create({"a": 1}, "work-dir")
 
     def test_create_task(self):
         with self.assertRaises(NotImplementedError):

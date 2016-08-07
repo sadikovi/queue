@@ -31,3 +31,5 @@ SRC_PATH = os.path.join(ROOT_PATH, "src")
 LIB_PATH = os.path.join(ROOT_PATH, "lib")
 # Directory for serving static files
 STATIC_PATH = os.path.join(ROOT_PATH, "static")
+# Configuration directory
+CONF_PATH = os.path.join(ROOT_PATH, "conf")

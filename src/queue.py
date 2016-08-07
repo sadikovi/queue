@@ -27,6 +27,7 @@ from jinja2 import Environment, FileSystemLoader
 from init import STATIC_PATH
 import pymongo
 import src.const as const
+from src.log import logger
 import src.scheduler as scheduler
 import src.simple as simple
 import src.spark as spark
@@ -236,21 +237,19 @@ class QueueController(object):
     Queue server main entry point. It defines all URLs that are used either for static content or
     REST API. Note that entire configuration for server is set in here.
     """
-    def __init__(self, args, logger=None):
+    def __init__(self, args):
         """
         Create instance of application controller.
 
         :param args: raw arguments dictionary
         :param logger: logger function to use
         """
-        self.name = "QUEUE"
-        self.logger = logger(self.name) if logger else util.get_default_logger(self.name)
         # parse queue configuration based on additional arguments passed
         conf = QueueConf()
         conf.setAllConf(args)
         # log options processed
         all_options = ["  %s -> %s" % (key, value) for key, value in conf.copy().items()]
-        self.logger.debug("Configuration:\n%s" % "\n".join(all_options))
+        logger.debug("Configuration:\n%s", "\n".join(all_options))
         # resolve options either directly or through session and other services
         self.mongodb_url = self._validate_mongodb_url(conf.getConfString(const.OPT_MONGODB_URL))
         self.working_dir = self._validate_working_dir(conf.getConfString(const.OPT_WORKING_DIR))
@@ -276,7 +275,7 @@ class QueueController(object):
             session_class = simple.SimpleSession
         else:
             raise StandardError("System code %s is unrecognized" % system_code)
-        return session_class.create(conf, self.working_dir, None)
+        return session_class.create(conf, self.working_dir)
 
     def _pretty_name(self, obj):
         """
@@ -361,11 +360,11 @@ class QueueController(object):
         Start all session services.
         """
         # getting server info validates connection
-        self.logger.info("Trying to connect to Mongo instance")
+        logger.info("Trying to connect to Mongo instance")
         server_info = self.client.server_info()
-        self.logger.info(server_info)
+        logger.info(server_info)
         # database and tables' names are fixed for now
-        self.logger.debug("Setting up database and indexes")
+        logger.debug("Setting up database and indexes")
         db = self.client.queue
         db.submissions.create_index([
             ("uid", pymongo.ASCENDING),

@@ -44,6 +44,9 @@ test_session.status.return_value = const.SYSTEM_BUSY
 test_session.scheduler = test_scheduler
 test_session.create_task.return_value = test_task
 
+queue.logger = mock.Mock()
+cherrypy.log = mock.Mock()
+
 # mock publish + subscribe services
 cherrypy.engine.publish = mock.Mock()
 cherrypy.engine.subscribe = mock.Mock()
@@ -56,7 +59,7 @@ def setUpModule(mock_pymongo, mock_util):
     mock_util.readwriteDirectory.return_value = "/None"
     mock_util.readonlyDirectory.return_value = "/None"
     with mock.patch.object(queue.QueueController, "_create_session", return_value=test_session):
-        controller = queue.QueueController(args={}, logger=mock.Mock())
+        controller = queue.QueueController(args={})
         cherrypy.tree.mount(controller, "/", queue.getConf())
     cherrypy.engine.start()
 setup_module = setUpModule
@@ -155,7 +158,7 @@ class QueueControllerSuite(unittest.TestCase):
     @mock.patch("src.queue.pymongo")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
     def test_validate(self, mock_session, mock_pymongo, mock_util):
-        controller = queue.QueueController(args=self.args, logger=mock.Mock())
+        controller = queue.QueueController(args=self.args)
         mock_util.URI.side_effect = ValueError()
         mock_util.readwriteDirectory.side_effect = ValueError()
         mock_util.readonlyDirectory.side_effect = ValueError()
@@ -171,7 +174,7 @@ class QueueControllerSuite(unittest.TestCase):
     @mock.patch("src.queue.pymongo")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
     def test_create_session(self, mock_session, mock_pymongo, mock_util):
-        controller = queue.QueueController(args=self.args, logger=mock.Mock())
+        controller = queue.QueueController(args=self.args)
         with self.assertRaises(AttributeError):
             controller._create_session(None)
         with self.assertRaises(AttributeError):
@@ -195,7 +198,7 @@ class QueueControllerSuite(unittest.TestCase):
     @mock.patch("src.queue.pymongo")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
     def test_pretty_name(self, mock_session, mock_pymongo, mock_util):
-        controller = queue.QueueController(args=self.args, logger=mock.Mock())
+        controller = queue.QueueController(args=self.args)
         self.assertEqual(controller._pretty_name(controller), "QueueController")
         self.assertEqual(controller._pretty_name(queue.QueueController), "QueueController")
 
@@ -203,7 +206,7 @@ class QueueControllerSuite(unittest.TestCase):
     @mock.patch("src.queue.pymongo")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
     def test_get_status_dict(self, mock_session, mock_pymongo, mock_util):
-        controller = queue.QueueController(args=self.args, logger=mock.Mock())
+        controller = queue.QueueController(args=self.args)
         metrics = controller.get_status_dict()
         self.assertEqual(metrics["code"], "TEST")
         self.assertEqual(metrics["url"], {"href": "http://local:8080", "alias": "link"})
@@ -219,7 +222,7 @@ class QueueControllerSuite(unittest.TestCase):
     @mock.patch("src.queue.pymongo")
     @mock.patch.object(spark.SparkSession, "create", return_value=test_session)
     def test_start(self, mock_session, mock_pymongo, mock_util):
-        controller = queue.QueueController(args=self.args, logger=mock.Mock())
+        controller = queue.QueueController(args=self.args)
         controller.start()
         controller.session.scheduler.start_maintenance.assert_called_once_with()
         controller.session.scheduler.start.assert_called_once_with()
@@ -232,7 +235,7 @@ class QueueControllerSuite(unittest.TestCase):
     def test_stop(self, mock_session, mock_pymongo, mock_util):
         test_mongo_client = mock.Mock()
         mock_pymongo.MongoClient = test_mongo_client
-        controller = queue.QueueController(args=self.args, logger=mock.Mock())
+        controller = queue.QueueController(args=self.args)
         controller.stop()
         controller.session.scheduler.stop.assert_called_once_with()
         controller.client.close.assert_called_once_with()

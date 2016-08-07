@@ -88,7 +88,7 @@ class SchedulerSimpleSuite(abstract.IntegrationTest):
     """
     def setUp(self):
         self.msg = []
-        self.sched = scheduler.Scheduler(1, timeout=1, logger=None)
+        self.sched = scheduler.Scheduler(1, timeout=1)
         self.scenario = Scenario("simple", [1, OkTask("1", const.PRIORITY_1, 2), 4])
 
     def get_msg(self, msg):
@@ -119,7 +119,7 @@ class SchedulerCancelSuite(abstract.IntegrationTest):
     """
     def setUp(self):
         self.msg = []
-        self.sched = scheduler.Scheduler(2, timeout=1, logger=None)
+        self.sched = scheduler.Scheduler(2, timeout=1)
         self.scenario = Scenario("cancel", [2, OkTask("1", const.PRIORITY_2, 5), 3])
 
     def get_msg(self, msg):
@@ -151,7 +151,7 @@ class SchedulerFinishCancelSuite(abstract.IntegrationTest):
     """
     def setUp(self):
         self.msg = []
-        self.sched = scheduler.Scheduler(2, timeout=1, logger=None)
+        self.sched = scheduler.Scheduler(2, timeout=1)
         self.scenario = Scenario(
             "finish-cancel",
             [2, OkTask("1", const.PRIORITY_2, 3), 1, OkTask("2", const.PRIORITY_1, 7), 5]
@@ -189,7 +189,7 @@ class SchedulerCancelAheadSuite(abstract.IntegrationTest):
     """
     def setUp(self):
         self.msg = []
-        self.sched = scheduler.Scheduler(2, timeout=1, logger=None)
+        self.sched = scheduler.Scheduler(2, timeout=1)
         self.scenario = Scenario("cancel-ahead", [
             1,
             "cancel:2",
@@ -230,7 +230,7 @@ class SchedulerFailedTasksSuite(abstract.IntegrationTest):
     """
     def setUp(self):
         self.msg = []
-        self.sched = scheduler.Scheduler(2, timeout=1, logger=None)
+        self.sched = scheduler.Scheduler(2, timeout=1)
         self.scenario = Scenario("failed-tasks", [
             2,
             FailTask("1", const.PRIORITY_2, 2),

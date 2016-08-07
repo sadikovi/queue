@@ -25,6 +25,7 @@ import types
 import urllib2
 import src.const as const
 import src.context as context
+from src.log import logger
 import src.scheduler as scheduler
 import src.submission as submission
 import src.util as util
@@ -167,24 +168,23 @@ class SparkStandaloneTask(scheduler.Task):
     Special task to process Spark submission for standalone cluster manager. Essentially creates
     spark-submit command and executes it.
     """
-    def __init__(self, uid, priority, logger=None):
+    def __init__(self, uid, priority):
         """
         Create new instance of Spark standalone task. Most of the options are set to default
         values. Use different setters to adjust parameters.
 
         :param uid: unique identifier for a task
         :param priority: task priority, should be one of PRIORITY_0, PRIORITY_1, PRIORITY_2
-        :param logger: logger function
         """
         # == Task options ==
         # Unique task identifier
         self.__uid = uid
+        # Task name
+        self.name = "Task[%s]" % self.__uid
         # Task priority
         self.__priority = priority
         # Task refresh timeout
         self.timeout = 1.0
-        # Task logger
-        self._logger = logger
         # == Spark cluster related options ==
         # Define how to connect and retrieve cluster information
         self._spark_submit = SPARK_SUBMIT
@@ -207,11 +207,6 @@ class SparkStandaloneTask(scheduler.Task):
     @property
     def priority(self):
         return self.__priority
-
-    @property
-    def logger(self):
-        logger_name = "%s[%s]" % (type(self).__name__, self.__uid)
-        return self._logger(logger_name) if self._logger else util.get_default_logger(logger_name)
 
     # == Get and set for Spark cluster related options ==
     @property
@@ -332,7 +327,7 @@ class SparkStandaloneTask(scheduler.Task):
         """
         # spark-submit command to launch
         command = self.cmd()
-        self.logger.info("Launch command %s", command)
+        logger.info("%s - Launch command %s", self.name, command)
         # only create stdout and stderr when working directory is provided
         if self.__working_directory:
             stdout_path = util.concat(self.__working_directory, "stdout")
@@ -344,7 +339,7 @@ class SparkStandaloneTask(scheduler.Task):
         else:
             self.__ps = subprocess.Popen(command, bufsize=4096, stdout=None, stderr=None,
                                          close_fds=True)
-        self.logger.info("Process pid=%s", self.__ps.pid)
+        logger.info("%s - Process pid=%s", self.name, self.__ps.pid)
 
     def run(self):
         """
@@ -393,8 +388,8 @@ class SparkStandaloneExecutor(scheduler.Executor):
     Spark scheduler executor for standalone cluster manager. Provides method to detect Spark
     cluster availability.
     """
-    def __init__(self, name, conn, task_queue_map, timeout=1.0, logger=None):
-        super(SparkStandaloneExecutor, self).__init__(name, conn, task_queue_map, timeout, logger)
+    def __init__(self, name, conn, task_queue_map, timeout=1.0):
+        super(SparkStandaloneExecutor, self).__init__(name, conn, task_queue_map, timeout)
         # Spark master url, e.g. spark://master:7077, we do not validate value
         self.master_url = SPARK_MASTER_URL
         # Spark web url, e.g. http://localhost:8080, we do not validate value
@@ -415,8 +410,8 @@ class SparkStandaloneScheduler(scheduler.Scheduler):
     Spark standalone scheduler for Queue. Launches executors and processes task to run on Spark
     cluster.
     """
-    def __init__(self, master_url, web_url, num_executors, timeout=1.0, logger=None):
-        super(SparkStandaloneScheduler, self).__init__(num_executors, timeout, logger)
+    def __init__(self, master_url, web_url, num_executors, timeout=1.0):
+        super(SparkStandaloneScheduler, self).__init__(num_executors, timeout)
         self.master_url = master_url
         self.web_url = web_url
         # maximum available slots is number of executors to run parallel tasks
@@ -444,16 +439,15 @@ class SparkSession(context.Session):
     """
     Session context to manage launching tasks in Spark, and providing statistics.
     """
-    def __init__(self, master_url, web_url, working_dir, num_executors=1, timeout=1.0, logger=None):
+    def __init__(self, master_url, web_url, working_dir, num_executors=1, timeout=1.0):
         self.master_url = validate_master_url(master_url)
         self.web_url = validate_web_url(web_url)
         # working directory is not validated
         self.working_dir = working_dir
-        self.log_func = logger
         self.num_executors = scheduler.validate_num_executors(num_executors)
         self.timeout = scheduler.validate_timeout(timeout)
         self._scheduler = SparkStandaloneScheduler(self.master_url, self.web_url,
-                                                   self.num_executors, self.timeout, logger)
+                                                   self.num_executors, self.timeout)
 
     def system_code(self):
         return SPARK_SYSTEM_CODE
@@ -478,7 +472,7 @@ class SparkSession(context.Session):
         if sub.system_code != SPARK_SYSTEM_CODE:
             raise ValueError("Incompatible code, %s != %s" % (sub.system_code, SPARK_SYSTEM_CODE))
         # After this point submission can be converted into task
-        task = SparkStandaloneTask(sub.uid, sub.priority, self.log_func)
+        task = SparkStandaloneTask(sub.uid, sub.priority)
         task.master_url = self.master_url
         task.web_url = self.web_url
         # create working directory for the task
@@ -494,9 +488,9 @@ class SparkSession(context.Session):
         return self._scheduler
 
     @classmethod
-    def create(cls, conf, working_dir, logger):
+    def create(cls, conf, working_dir):
         timeout = conf.getConfFloat(const.OPT_SCHEDULER_TIMEOUT)
         num_parallel_tasks = conf.getConfInt(const.OPT_NUM_PARALLEL_TASKS)
         spark_master = conf.getConfString(const.OPT_SPARK_MASTER)
         spark_web = conf.getConfString(const.OPT_SPARK_WEB)
-        return cls(spark_master, spark_web, working_dir, num_parallel_tasks, timeout, logger)
+        return cls(spark_master, spark_web, working_dir, num_parallel_tasks, timeout)
