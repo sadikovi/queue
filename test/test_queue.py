@@ -29,7 +29,7 @@ import src.util as util
 from test.cptestcase import BaseCherryPyTestCase
 
 # == Test task + session + scheduler ==
-test_task = mock.create_autospec(spark.SparkStandaloneTask, spec_set=True, instance=True, uid="123")
+test_task = mock.create_autospec(spark.SparkStandaloneTask, spec_set=True, instance=True)
 
 test_scheduler = mock.create_autospec(spark.SparkStandaloneScheduler, spec_set=True, instance=True)
 test_scheduler.get_num_executors.return_value = 5

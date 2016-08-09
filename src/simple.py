@@ -31,7 +31,7 @@ class SimpleTask(scheduler.Task):
     testing.
     """
     def __init__(self, uid, priority):
-        self._uid = uid
+        self.uid = uid
         self._priority = priority
         self._cancelled = False
         self._iterations = 10
@@ -39,10 +39,6 @@ class SimpleTask(scheduler.Task):
 
     def is_cancelled(self):
         return self._cancelled
-
-    @property
-    def uid(self):
-        return self._uid
 
     @property
     def priority(self):

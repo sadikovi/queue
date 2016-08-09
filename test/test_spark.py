@@ -155,8 +155,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         self.assertEqual(spark.validate_spark_options({}), {})
 
     def test_init(self):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
-        self.assertEqual(task.uid, "123")
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         self.assertEqual(task.priority, const.PRIORITY_0)
         self.assertEqual(task._spark_submit, spark.SPARK_SUBMIT)
         self.assertEqual(task._master_url, spark.SPARK_MASTER_URL)
@@ -169,7 +168,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
 
     @mock.patch("src.spark.util")
     def test_working_directory_1(self, mock_util):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         self.assertEqual(task.working_directory, None)
         # test setting working directory, should validate path
         mock_util.readwriteDirectory.side_effect = ValueError("Test")
@@ -178,29 +177,25 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
 
     @mock.patch("src.spark.util")
     def test_working_directory_2(self, mock_util):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         # should set fully resolved path
         mock_util.readwriteDirectory.return_value = "/tmp/work"
         task.working_directory = "work"
         self.assertEqual(task.working_directory, "/tmp/work")
 
     def test_working_directory_3(self):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.working_directory = None
         self.assertEqual(task.working_directory, None)
 
-    def test_uid(self):
-        task = spark.SparkStandaloneTask(None, const.PRIORITY_0)
-        self.assertEqual(task.uid, None)
-
     def test_priority(self):
-        task = spark.SparkStandaloneTask(None, const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         self.assertEqual(task.priority, const.PRIORITY_0)
 
     # Test of Spark cluster information: submit, master url, and web url
     @mock.patch("src.spark.util")
     def test_spark_submit(self, mock_util):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.spark_submit = spark.SPARK_SUBMIT
         self.assertEqual(task.spark_submit, spark.SPARK_SUBMIT)
         mock_util.readonlyFile.return_value = "/tmp/other-spark-submit"
@@ -208,7 +203,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         self.assertEqual(task.spark_submit, "/tmp/other-spark-submit")
 
     def test_master_url(self):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.master_url = spark.SPARK_MASTER_URL
         self.assertEqual(task.master_url, spark.SPARK_MASTER_URL)
         with self.assertRaises(ValueError):
@@ -221,7 +216,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         self.assertEqual(task.master_url, "spark://sandbox:7077")
 
     def test_web_url(self):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.web_url = spark.SPARK_WEB_URL
         self.assertEqual(task.web_url, spark.SPARK_WEB_URL)
         with self.assertRaises(StandardError):
@@ -234,7 +229,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
     @mock.patch("src.spark.util")
     def test_cmd(self, mock_util):
         # should create cmd from default task
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         answer = [
             spark.SPARK_SUBMIT,
             "--master", spark.SPARK_MASTER_URL,
@@ -245,7 +240,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         self.assertEqual(task.cmd(), answer)
         # should create cmd with arbitrary options
         mock_util.readonlyFile.return_value = "/tmp/file"
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.spark_options = {"spark.a": 1}
         task.job_options = ["a", "b"]
         task.main_class = "Class"
@@ -262,7 +257,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         self.assertEqual(task.cmd(), answer)
 
     def test_set_application_empty(self):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         # use defaults
         task.set_application()
         self.assertEqual(task.name, spark.SPARK_APP_NAME)
@@ -273,7 +268,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
 
     @mock.patch("src.spark.util")
     def test_set_application_no_options(self, mock_util):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         # set application options
         mock_util.readonlyFile.return_value = "/tmp/file.jar"
         task.set_application(name="test", main_class="Class", jar="file.jar")
@@ -284,7 +279,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         self.assertEqual(task.job_options, [])
 
     def test_set_application_with_options(self):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.set_application(name="test", spark_options={"spark.a": 1, "b": 2},
                              job_options=["a", "b", 3])
         self.assertEqual(task.name, "test")
@@ -294,7 +289,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
     @mock.patch("src.spark.subprocess")
     def test_launch_process_no_stdout(self, mock_popen):
         mock_popen.Popen = mock.Mock() # redefine Popen object
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.working_directory = None
         task.launch_process()
         mock_popen.Popen.assert_called_with(task.cmd(), bufsize=4096, stdout=None, stderr=None,
@@ -307,7 +302,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         mock_popen.Popen = mock.Mock() # redefine Popen object
         mock_util_open.return_value = "stream"
         mock_rw_dir.return_value = "/tmp/work"
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.working_directory = "work"
         task.launch_process()
         mock_popen.Popen.assert_called_with(task.cmd(), bufsize=4096, stdout="stream",
@@ -317,7 +312,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
 
     @mock.patch("src.spark.time.sleep")
     def test_run_no_ps(self, mock_sleep):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.launch_process = mock.Mock()
         with self.assertRaises(AttributeError):
             task.run()
@@ -329,7 +324,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         popen_instance = mock.Mock()
         popen_instance.poll.side_effect = [None, None, 0]
         mock_popen.return_value = popen_instance
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.run()
         self.assertEqual(mock_sleep.call_count, 3)
         mock_sleep.assert_called_with(task.timeout)
@@ -340,13 +335,13 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         popen_instance = mock.Mock()
         popen_instance.poll.side_effect = [None, None, 127]
         mock_popen.return_value = popen_instance
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         with self.assertRaises(IOError):
             task.run()
         mock_sleep.assert_called_with(task.timeout)
 
     def test_cancel_no_ps(self):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         self.assertEqual(task.cancel(), None)
 
     @mock.patch("src.spark.subprocess")
@@ -354,7 +349,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
     def test_cancel_with_ps_no_exitcode(self, mock_time, mock_popen):
         mock_time.sleep.return_value = None # remove sleep function
         mock_popen.Popen = mock.Mock() # redefine Popen object
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.working_directory = None
         task.launch_process()
         task._current_ps().poll.return_value = 127
@@ -368,7 +363,7 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
     def test_cancel_with_ps_with_exitcode(self, mock_time, mock_popen):
         mock_time.sleep.return_value = None # remove sleep function
         mock_popen.Popen = mock.Mock() # redefine Popen object
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         task.working_directory = None
         task.launch_process()
         task._current_ps().poll.return_value = None
@@ -379,9 +374,8 @@ class SparkStandaloneTaskSuite(unittest.TestCase):
         task._current_ps().kill.assert_called_with()
 
     def test_serde(self):
-        task = spark.SparkStandaloneTask("123", const.PRIORITY_0)
+        task = spark.SparkStandaloneTask(const.PRIORITY_0)
         new_task = cPickle.loads(cPickle.dumps(task))
-        self.assertEqual(new_task.uid, task.uid)
         self.assertEqual(new_task.priority, task.priority)
         self.assertEqual(new_task.working_directory, task.working_directory)
         self.assertEqual(new_task.name, task.name)

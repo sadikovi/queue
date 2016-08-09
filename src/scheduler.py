@@ -77,22 +77,12 @@ class Task(object):
     """
     Task class is a public API for creating executable code within executor TaskThread. Must be
     serializable, and must implement methods:
-    - uid
     - priority
     - run()
     - cancel()
     Task defines the running code for unit of execution, note that it is assumed to be blocking,
     though should handle asynchronous calls of `cancel()` method correctly.
     """
-    @property
-    def uid(self):
-        """
-        Unique identifier for task.
-
-        :return: globally unique task id
-        """
-        raise NotImplementedError("Not implemented")
-
     @property
     def priority(self):
         """
@@ -123,7 +113,7 @@ class Task(object):
     def dumps(self):
         """
         Return dictionary of key-value pairs (can be nested) to display as task info. This is used
-        solely for the purpose of showing in UI and will be converted into JSON.  Front-end must
+        solely for the purpose of showing in UI and will be converted into JSON. Front-end must
         know how to parse task's generated JSON.
 
         :return: dictionary of key-value pairs to display
@@ -150,6 +140,48 @@ class ExecutorInterruptedException(InterruptedException):
     Interrupted exception for executor, thrown when executor is requested to shut down.
     """
     pass
+
+class AtomicCounter(object):
+    """
+    Simple atomic counter that is used to assign unique task id within scheduler.
+    """
+    def __init__(self, initial=0):
+        """
+        Create instance of atomic counter with some initial value.
+
+        :param initial: initial value for counter
+        """
+        if initial >= 0:
+            self.val = multiprocessing.Value("I", initial, lock=True)
+        else:
+            raise AttributeError("Expected initial %s to be >= 0" % initial)
+
+    def increment(self):
+        """
+        Increment value by 1 atomically.
+        """
+        with self.val.get_lock():
+            self.val.value += 1
+
+    def get(self):
+        """
+        Get current counter value.
+
+        :return: atomic value
+        """
+        with self.val.get_lock():
+            return self.val.value
+
+    def getAndIncrement(self):
+        """
+        Get and increment subsequently.
+
+        :return: value before increment
+        """
+        with self.val.get_lock():
+            current_value = self.val.value
+            self.val.value += 1
+            return current_value
 
 class Message(object):
     """
@@ -198,6 +230,22 @@ class WorkerThread(threading.Thread):
     def cancel(self):
         self._task.cancel()
 
+class TaskBlock(object):
+    """
+    Task block that encapsulates information about task, internal and external id.
+    """
+    def __init__(self, uid, task, info=None):
+        """
+        Create instance of Task block.
+
+        :param uid: internal task id, assigned by scheduler
+        :param task: Task instance to run
+        :param info: user-defined information to track task
+        """
+        self.uid = uid
+        self.task = task
+        self.info = info
+
 class TaskThread(threading.Thread):
     """
     TaskThread is a container for task as a unit of execution. It is essentially a daemon thread
@@ -211,21 +259,24 @@ class TaskThread(threading.Thread):
     failed, otherwise succeeded. Task can also be cancelled during execution. Note that task does
     not guarantee that worker thread will exit correctly, this depends on actual implementation.
     """
-    def __init__(self, task):
+    def __init__(self, task_block):
         """
         Create new instance of TaskThread. Note that task block must be serializable with pickle.
 
-        :param task: code to execute for this task thread
+        :param task_block: TaskBlock instance containing correct task to run
         """
         super(TaskThread, self).__init__()
         # task is by definition a daemon thread
         self.daemon = True
         # refresh timeout for worker thread
         self.refresh_timeout = 0.5
-        if not isinstance(task, Task):
-            raise AttributeError("Invalid task provided: %s" % task)
-        self.__uid = task.uid
-        self.__task = task
+        if not isinstance(task_block, TaskBlock):
+            raise AttributeError("Invalid task block provided: %s" % task_block)
+        if not isinstance(task_block.task, Task):
+            raise AttributeError("Invalid task provided: %s" % task_block.task)
+        self.__uid = task_block.uid
+        self.__task = task_block.task
+        self.__info = task_block.info
         self.__metrics = {}
         self.__status = TASK_PENDING
         # setting up logger
@@ -247,6 +298,15 @@ class TaskThread(threading.Thread):
         :return: unique identifier for this task
         """
         return self.__uid
+
+    @property
+    def task_info(self):
+        """
+        Get task info (optional, can be None).
+
+        :return: task info if specified
+        """
+        return self.__info
 
     @property
     def status(self):
@@ -312,7 +372,7 @@ class TaskThread(threading.Thread):
         self._set_metric("duration", 0)
         self.__status = TASK_STARTED
         # try launching listener callback, note that failure should not affect execution of task
-        self._safe_exec(self.on_task_started, uid=self.__uid)
+        self._safe_exec(self.on_task_started, uid=self.__uid, info=self.__info)
         logger.debug("%s - Started, time=%s", self.name, self._get_metric("starttime"))
         try:
             msg_queue = threadqueue.Queue()
@@ -334,18 +394,19 @@ class TaskThread(threading.Thread):
         except TaskInterruptedException:
             # task has been cancelled or requested termination
             self.__status = TASK_CANCELLED
-            self._safe_exec(self.on_task_cancelled, uid=self.__uid)
+            self._safe_exec(self.on_task_cancelled, uid=self.__uid, info=self.__info)
         # pylint: disable=W0703,broad-except
         except Exception as e:
             # any other exception is considered a failure
             self._set_metric("reason", "%s" % e)
             logger.debug("%s - Failure reason=%s", self.name, self._get_metric("reason"))
             self.__status = TASK_FAILED
-            self._safe_exec(self.on_task_failed, uid=self.__uid, reason=self._get_metric("reason"))
+            self._safe_exec(self.on_task_failed, uid=self.__uid, info=self.__info,
+                            reason=self._get_metric("reason"))
         # pylint: enable=W0703,broad-except
         else:
             self.__status = TASK_SUCCEEDED
-            self._safe_exec(self.on_task_succeeded, uid=self.__uid)
+            self._safe_exec(self.on_task_succeeded, uid=self.__uid, info=self.__info)
         finally:
             # set post-execution metrics for task
             self._set_metric("endtime", time.time())
@@ -423,20 +484,20 @@ class Executor(multiprocessing.Process):
 
         :return: new available task across priorities
         """
-        task = None
+        task_block = None
         for priority in const.PRIORITIES:
             logger.debug("%s - Searching task in queue for priority %s", self.name, priority)
             try:
-                task = self.task_queue_map[priority].get(block=False)
+                task_block = self.task_queue_map[priority].get(block=False)
             except threadqueue.Empty:
                 logger.debug("%s - No tasks available for priority %s", self.name, priority)
             except KeyError:
                 logger.debug("%s - Non-existent priority %s skipped", self.name, priority)
             else:
-                if task: # pragma: no branch
+                if task_block: # pragma: no branch
                     break
         # create thread for task
-        task_thread = TaskThread(task) if task else None
+        task_thread = TaskThread(task_block) if task_block else None
         return task_thread
 
     def _process_task(self):
@@ -456,13 +517,14 @@ class Executor(multiprocessing.Process):
         # check general task processing
         if self._active_task:
             task_id = self._active_task.uid
+            info = self._active_task.task_info
             task_status = self._active_task.status
             # perform action based on active task status
             if task_status is TASK_PENDING:
                 # check if external system is available to run task (Developer API)
                 if self.external_system_available():
                     self._active_task.start()
-                    self.conn.send(Message(EXECUTOR_TASK_STARTED, task_id=task_id))
+                    self.conn.send(Message(EXECUTOR_TASK_STARTED, task_id=task_id, info=info))
                     logger.info("%s - Started task %s", self.name, task_id)
                 else:
                     logger.info("%s - External system is not available", self.name)
@@ -472,12 +534,12 @@ class Executor(multiprocessing.Process):
                     logger.debug("%s - Ping task %s is alive", self.name, task_id)
             elif task_status is TASK_SUCCEEDED:
                 # task finished successfully
-                self.conn.send(Message(EXECUTOR_TASK_SUCCEEDED, task_id=task_id))
+                self.conn.send(Message(EXECUTOR_TASK_SUCCEEDED, task_id=task_id, info=info))
                 logger.info("%s - Finished task %s, status %s", self.name, task_id, task_status)
                 self._active_task = None
             elif task_status is TASK_FAILED:
                 # task failed
-                self.conn.send(Message(EXECUTOR_TASK_FAILED, task_id=task_id))
+                self.conn.send(Message(EXECUTOR_TASK_FAILED, task_id=task_id, info=info))
                 logger.info("%s - Finished task %s, status %s", self.name, task_id, task_status)
                 self._active_task = None
             elif task_status is TASK_CANCELLED:
@@ -495,8 +557,9 @@ class Executor(multiprocessing.Process):
         """
         if self._active_task:
             task_id = self._active_task.uid
+            info = self._active_task.task_info
             self._active_task.cancel()
-            self.conn.send(Message(EXECUTOR_TASK_CANCELLED, task_id=task_id))
+            self.conn.send(Message(EXECUTOR_TASK_CANCELLED, task_id=task_id, info=info))
             logger.info("%s - Cancelled task %s", self.name, task_id)
             self._active_task = None
         else:
@@ -592,6 +655,8 @@ class Scheduler(object):
         }
         # scheduler metrics
         self.__metrics = {}
+        # id allocator
+        self.counter = AtomicCounter(0)
         # callbacks
         """
         .. note:: DeveloperApi
@@ -733,20 +798,24 @@ class Scheduler(object):
         self.executors = None
         self.task_queue_map = None
 
-    def submit(self, task):
+    def submit(self, task, info=None):
         """
         Add task for priority provided with task.
 
         :param task: task to add, must be instance of Task
+        :param info: task info to track
         :return: task uid
         """
         if not isinstance(task, Task):
             raise TypeError("%s != Task" % type(task))
         if task.priority not in self.task_queue_map:
             raise KeyError("No priority %s found in queue map" % task.priority)
-        self.task_queue_map[task.priority].put_nowait(task)
-        self._increment_metric("submitted-tasks")
-        return task.uid
+        task_id = self.counter.getAndIncrement()
+        task_block = TaskBlock(task_id, task, info)
+        self.task_queue_map[task.priority].put_nowait(task_block)
+        # keep number of submitted tasks based on atomic counter
+        self._set_metric("submitted-tasks", self.counter.get())
+        return task_id
 
     def cancel(self, task_id):
         """
@@ -761,8 +830,8 @@ class Scheduler(object):
                 conn.send(Message(EXECUTOR_CANCEL_TASK, task_id=task_id))
 
     # Thread is considered to be long-lived, and is terminated when scheduler is stopped.
-    # Method always provides list of messages to callback or empty list, it is guaranteed to provide
-    # list of valid messages.
+    # Method always provides list of messages to callback or empty list, it is guaranteed to
+    # provide list of valid messages.
     def _process_callback(self):
         msg_list = {}
         # sometimes thread can report that pipe is None, which might require lock before

@@ -34,11 +34,11 @@ class Scenario(object):
             if isinstance(arg, types.StringType):
                 call = arg.split(":")
                 if call[0] == "cancel":
-                    sched.cancel(call[1])
+                    sched.cancel(int(call[1]))
             if isinstance(arg, types.IntType):
                 time.sleep(arg)
             elif isinstance(arg, scheduler.Task):
-                sched.submit(arg)
+                sched.submit(arg, info=arg.uid)
 
     @property
     def name(self):
@@ -50,14 +50,10 @@ class Scenario(object):
 
 class OkTask(scheduler.Task):
     def __init__(self, uid, priority, seconds):
-        self._uid = uid
+        self.uid = uid
         self._priority = priority
         self._runtime = seconds
         self._cancelled = False
-
-    @property
-    def uid(self):
-        return self._uid
 
     @property
     def priority(self):
@@ -108,9 +104,11 @@ class SchedulerSimpleSuite(abstract.IntegrationTest):
         print self.msg
         assert len(self.msg) == 2
         assert self.msg[0].status == scheduler.EXECUTOR_TASK_STARTED
-        assert self.msg[0].arguments["task_id"] == "1"
+        assert self.msg[0].arguments["task_id"] == 0
+        assert self.msg[0].arguments["info"] == "1"
         assert self.msg[1].status == scheduler.EXECUTOR_TASK_SUCCEEDED
-        assert self.msg[1].arguments["task_id"] == "1"
+        assert self.msg[1].arguments["task_id"] == 0
+        assert self.msg[1].arguments["info"] == "1"
 
 class SchedulerCancelSuite(abstract.IntegrationTest):
     """
@@ -139,9 +137,11 @@ class SchedulerCancelSuite(abstract.IntegrationTest):
         print self.msg
         assert len(self.msg) == 2
         assert self.msg[0].status == scheduler.EXECUTOR_TASK_STARTED
-        assert self.msg[0].arguments["task_id"] == "1"
+        assert self.msg[0].arguments["task_id"] == 0
+        assert self.msg[1].arguments["info"] == "1"
         assert self.msg[1].status == scheduler.EXECUTOR_TASK_CANCELLED
-        assert self.msg[1].arguments["task_id"] == "1"
+        assert self.msg[1].arguments["task_id"] == 0
+        assert self.msg[1].arguments["info"] == "1"
 
 class SchedulerFinishCancelSuite(abstract.IntegrationTest):
     """
@@ -174,13 +174,17 @@ class SchedulerFinishCancelSuite(abstract.IntegrationTest):
         print self.msg
         assert len(self.msg) == 4
         assert self.msg[0].status == scheduler.EXECUTOR_TASK_STARTED
-        assert self.msg[0].arguments["task_id"] == "1"
+        assert self.msg[0].arguments["task_id"] == 0
+        assert self.msg[0].arguments["info"] == "1"
         assert self.msg[1].status == scheduler.EXECUTOR_TASK_STARTED
-        assert self.msg[1].arguments["task_id"] == "2"
+        assert self.msg[1].arguments["task_id"] == 1
+        assert self.msg[1].arguments["info"] == "2"
         assert self.msg[2].status == scheduler.EXECUTOR_TASK_SUCCEEDED
-        assert self.msg[2].arguments["task_id"] == "1"
+        assert self.msg[2].arguments["task_id"] == 0
+        assert self.msg[2].arguments["info"] == "1"
         assert self.msg[3].status == scheduler.EXECUTOR_TASK_CANCELLED
-        assert self.msg[3].arguments["task_id"] == "2"
+        assert self.msg[3].arguments["task_id"] == 1
+        assert self.msg[3].arguments["info"] == "2"
 
 class SchedulerCancelAheadSuite(abstract.IntegrationTest):
     """
@@ -192,7 +196,7 @@ class SchedulerCancelAheadSuite(abstract.IntegrationTest):
         self.sched = scheduler.Scheduler(2, timeout=1)
         self.scenario = Scenario("cancel-ahead", [
             1,
-            "cancel:2",
+            "cancel:1", # task id, not a uid of OkTask
             2,
             OkTask("1", const.PRIORITY_2, 3),
             1,
@@ -217,11 +221,14 @@ class SchedulerCancelAheadSuite(abstract.IntegrationTest):
         print self.msg
         assert len(self.msg) == 3
         assert self.msg[0].status == scheduler.EXECUTOR_TASK_STARTED
-        assert self.msg[0].arguments["task_id"] == "1"
+        assert self.msg[0].arguments["task_id"] == 0
+        assert self.msg[0].arguments["info"] == "1"
         assert self.msg[1].status == scheduler.EXECUTOR_TASK_CANCELLED
-        assert self.msg[1].arguments["task_id"] == "2"
+        assert self.msg[1].arguments["task_id"] == 1
+        assert self.msg[1].arguments["info"] == "2"
         assert self.msg[2].status == scheduler.EXECUTOR_TASK_SUCCEEDED
-        assert self.msg[2].arguments["task_id"] == "1"
+        assert self.msg[2].arguments["task_id"] == 0
+        assert self.msg[2].arguments["info"] == "1"
 
 class SchedulerFailedTasksSuite(abstract.IntegrationTest):
     """
@@ -256,10 +263,14 @@ class SchedulerFailedTasksSuite(abstract.IntegrationTest):
         print self.msg
         assert len(self.msg) == 4
         assert self.msg[0].status == scheduler.EXECUTOR_TASK_STARTED
-        assert self.msg[0].arguments["task_id"] == "1"
+        assert self.msg[0].arguments["task_id"] == 0
+        assert self.msg[0].arguments["info"] == "1"
         assert self.msg[1].status == scheduler.EXECUTOR_TASK_STARTED
-        assert self.msg[1].arguments["task_id"] == "2"
+        assert self.msg[1].arguments["task_id"] == 1
+        assert self.msg[1].arguments["info"] == "2"
         assert self.msg[2].status == scheduler.EXECUTOR_TASK_FAILED
-        assert self.msg[2].arguments["task_id"] == "1"
+        assert self.msg[2].arguments["task_id"] == 0
+        assert self.msg[2].arguments["info"] == "1"
         assert self.msg[3].status == scheduler.EXECUTOR_TASK_FAILED
-        assert self.msg[3].arguments["task_id"] == "2"
+        assert self.msg[3].arguments["task_id"] == 1
+        assert self.msg[3].arguments["info"] == "2"

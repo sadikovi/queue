@@ -168,19 +168,14 @@ class SparkStandaloneTask(scheduler.Task):
     Special task to process Spark submission for standalone cluster manager. Essentially creates
     spark-submit command and executes it.
     """
-    def __init__(self, uid, priority):
+    def __init__(self, priority):
         """
         Create new instance of Spark standalone task. Most of the options are set to default
         values. Use different setters to adjust parameters.
 
-        :param uid: unique identifier for a task
         :param priority: task priority, should be one of PRIORITY_0, PRIORITY_1, PRIORITY_2
         """
         # == Task options ==
-        # Unique task identifier
-        self.__uid = uid
-        # Task name
-        self.name = "Task[%s]" % self.__uid
         # Task priority
         self.__priority = priority
         # Task refresh timeout
@@ -199,10 +194,6 @@ class SparkStandaloneTask(scheduler.Task):
         self.main_class = None
         self.jar = None
         self.job_options = []
-
-    @property
-    def uid(self):
-        return self.__uid
 
     @property
     def priority(self):
@@ -472,11 +463,11 @@ class SparkSession(context.Session):
         if sub.system_code != SPARK_SYSTEM_CODE:
             raise ValueError("Incompatible code, %s != %s" % (sub.system_code, SPARK_SYSTEM_CODE))
         # After this point submission can be converted into task
-        task = SparkStandaloneTask(sub.uid, sub.priority)
+        task = SparkStandaloneTask(sub.priority)
         task.master_url = self.master_url
         task.web_url = self.web_url
         # create working directory for the task
-        task_working_dir = util.concat(self.working_dir, task.uid)
+        task_working_dir = util.concat(self.working_dir, sub.uid)
         util.mkdir(task_working_dir, 0775)
         task.working_directory = task_working_dir
         # update payload to include name
